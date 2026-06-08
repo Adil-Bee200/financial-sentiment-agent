@@ -1,8 +1,10 @@
-# Financial Research Agent — Setup
+# Backend setup
 
-Cron-based pipeline (GitHub Actions + Postgres + OpenAI). Celery/FastAPI code lives under `archive/`.
+Cron-based pipeline (GitHub Actions + Postgres + OpenAI). Legacy Celery/FastAPI code is in `archive/`.
 
 ## Environment
+
+From this directory (`backend/`):
 
 ```bash
 cp env.example .env
@@ -19,7 +21,7 @@ alembic upgrade head
 
 Use Neon’s **pooled** connection string in production.
 
-## Run tests
+## Tests
 
 ```bash
 pytest

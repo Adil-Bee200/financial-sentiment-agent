@@ -2,7 +2,7 @@
 
 Code from the **Celery + Redis + FastAPI** architecture, kept for reference while the project moves to a **GitHub Actions cron pipeline**.
 
-Not imported by the active app. Paths under `archive/app/` mirror the old layout.
+Not imported by the active app. Lives at `backend/archive/`; paths below are relative to that folder.
 
 | Path | What it was |
 |------|-------------|
