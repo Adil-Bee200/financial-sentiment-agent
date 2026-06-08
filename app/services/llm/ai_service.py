@@ -1,12 +1,3 @@
-"""
-LLM Service for Financial Article Processing
-
-This service handles:
-1. Relevance Gate => Determines if an article is relevant to tracked tickers
-2. Summarization => Creates concise summaries of articles
-3. Sentiment Classification => Analyzes sentiment and returns a score
-"""
-
 import logging
 import json
 from typing import List, Optional

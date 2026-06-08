@@ -22,5 +22,10 @@ def send_discord_alert_if_configured(alert: Alerts) -> None:
         "content": f"Alert ID {alert.alert_id}: {alert.trigger_reason} for {alert.ticker} with sentiment value {alert.sentiment_value}"
     }
 
-    response = httpx.post(str(url).strip(), json=payload, timeout=15.0).raise_for_status()
-    return response.status_code == 200
+    try:
+        response = httpx.post(str(url).strip(), json=payload, timeout=15.0)
+        response.raise_for_status()
+    except httpx.HTTPError as e:
+        logger.warning("Discord webhook request failed: %s", e)
+    except Exception as e:
+        logger.warning("Discord notification error: %s", e)

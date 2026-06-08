@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.article import ArticleEntities, Articles
@@ -97,7 +96,7 @@ class SentimentService:
         date = self.normalize_date_to_midnight(date)
         existing_sentiment = self.db.query(SentimentDaily).filter(SentimentDaily.ticker == ticker).filter(SentimentDaily.date == date).first()
         if not existing_sentiment:
-            raise HTTPException(status_code=404, detail="Sentiment not found for ticker")
+            raise LookupError("Sentiment not found for ticker")
             
         existing_sentiment.avg_sentiment = avg_sentiment
         existing_sentiment.article_count = article_count
