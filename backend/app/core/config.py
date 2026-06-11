@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     HOURS_BACK: int = 24
     NEWS_MAX_PAGES: int = 3
 
+    # LLM cost controls
+    LLM_BODY_MAX_CHARS: int = 1000
+    MAX_LLM_ARTICLES_PER_DAY: int = 35
+
     # Application
     APP_NAME: str = "Financial Research Agent"
     DEBUG: bool = False

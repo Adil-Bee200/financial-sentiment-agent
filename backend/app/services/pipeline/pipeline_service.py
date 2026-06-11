@@ -10,11 +10,15 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.article import ArticleEntities, Articles
 from app.models.processing_runs import ProcessingRuns
-from app.models.tracked_assets import TrackedAssets
 from app.services.alerts.alert_service import AlertService
 from app.services.filtering.keyword_filter import build_search_text, match_tracked_assets
 from app.services.ingestion.article_ingestion_service import ArticleIngestionService
 from app.services.llm.ai_service import LLMService
+from app.services.pipeline.llm_content import (
+    build_llm_input,
+    count_llm_articles_today,
+    remaining_llm_budget,
+)
 from app.services.sentiment.sentiment_service import SentimentService
 from app.services.tracked_assets.tracked_assets_service import TrackedAssetsService
 
@@ -28,14 +32,16 @@ class PipelineResult:
     articles_fetched: int = 0
     articles_keyword_matched: int = 0
     articles_processed: int = 0
-    articles_skipped: int = 0
+    articles_skipped_no_keyword: int = 0
+    articles_skipped_llm_limit: int = 0
+    llm_budget_remaining_start: int = 0
     alerts_created: int = 0
     symbols_aggregated: List[str] = field(default_factory=list)
     error: str | None = None
 
 
 class PipelineService:
-    """Fetch → keyword filter → LLM → store → rollup → alerts."""
+    """Fetch → dedupe → keyword filter → LLM (capped) → store → rollup → alerts."""
 
     def __init__(self, db: Session):
         self.db = db
@@ -74,7 +80,7 @@ class PipelineService:
     def _execute(self, run: ProcessingRuns) -> PipelineResult:
         tracked = self.assets.list_all()
         if not tracked:
-            logger.warning("No tracked assets, add symbols before running the pipeline")
+            logger.warning("No tracked assets — add symbols before running the pipeline")
             run.status = "completed"
             run.finished_at = datetime.now(timezone.utc)
             run.raw_text = "No tracked assets configured"
@@ -82,6 +88,15 @@ class PipelineService:
             return PipelineResult(run_id=str(run.run_id), status="completed")
 
         now = datetime.now(timezone.utc)
+        llm_budget = remaining_llm_budget(self.db, now)
+        already_today = count_llm_articles_today(self.db, now)
+        logger.info(
+            "LLM daily cap: %s/%s used today, %s slots remaining this run",
+            already_today,
+            settings.MAX_LLM_ARTICLES_PER_DAY,
+            llm_budget,
+        )
+
         from_date = (now - timedelta(hours=settings.HOURS_BACK)).strftime("%Y-%m-%d")
         to_date = now.strftime("%Y-%m-%d")
 
@@ -93,27 +108,35 @@ class PipelineService:
         )
         run.articles_fetched = len(fetched)
 
-        new_articles = self.ingestion.filter_new_articles(fetched)
+        new_articles = self._sort_by_published_desc(
+            self.ingestion.filter_new_articles(fetched)
+        )
         keyword_matched = 0
         processed = 0
-        skipped = 0
+        skipped_no_keyword = 0
+        skipped_llm_limit = 0
+        llm_used_this_run = 0
         symbols_touched: Set[str] = set()
         aggregation_dates: Dict[str, Set[datetime]] = {}
 
         for raw in new_articles:
             matches = match_tracked_assets(build_search_text(raw), tracked)
             if not matches:
-                skipped += 1
+                skipped_no_keyword += 1
                 continue
 
             keyword_matched += 1
-            body = self._article_body(raw)
-            title = raw["title"]
 
-            summary = self.llm.summarize_article(title, body)
-            sentiment = self.llm.classify_sentiment(title, body)
+            if llm_used_this_run >= llm_budget:
+                skipped_llm_limit += 1
+                continue
+
+            title, llm_content = build_llm_input(raw)
+            summary = self.llm.summarize_article(title, llm_content)
+            sentiment = self.llm.classify_sentiment(title, llm_content)
             published_at = self._parse_published_at(raw.get("publishedAt"))
             source_name = self._source_name(raw)
+            stored_body = self._article_body_for_storage(raw)
 
             article = Articles(
                 title=title,
@@ -121,7 +144,7 @@ class PipelineService:
                 url=raw["url"],
                 published_at=published_at,
                 summary=summary,
-                raw_text=body or None,
+                raw_text=stored_body or None,
             )
             self.db.add(article)
             self.db.flush()
@@ -142,7 +165,8 @@ class PipelineService:
 
             self.db.commit()
             processed += 1
-            logger.info("Processed: %s (%s)", title[:80], ", ".join(m.symbol for m in matches))
+            llm_used_this_run += 1
+            logger.info("LLM processed: %s (%s)", title[:80], ", ".join(m.symbol for m in matches))
 
         symbols_aggregated: List[str] = []
         for symbol in sorted(symbols_touched):
@@ -156,7 +180,8 @@ class PipelineService:
         run.status = "completed"
         run.finished_at = datetime.now(timezone.utc)
         run.raw_text = (
-            f"keyword_matched={keyword_matched}, skipped={skipped}, "
+            f"keyword_matched={keyword_matched}, no_keyword={skipped_no_keyword}, "
+            f"llm_limit_skipped={skipped_llm_limit}, llm_used_run={llm_used_this_run}, "
             f"alerts={alerts_created}, symbols={','.join(symbols_aggregated) or 'none'}"
         )
         self.db.commit()
@@ -167,13 +192,24 @@ class PipelineService:
             articles_fetched=run.articles_fetched,
             articles_keyword_matched=keyword_matched,
             articles_processed=processed,
-            articles_skipped=skipped,
+            articles_skipped_no_keyword=skipped_no_keyword,
+            articles_skipped_llm_limit=skipped_llm_limit,
+            llm_budget_remaining_start=llm_budget,
             alerts_created=alerts_created,
             symbols_aggregated=symbols_aggregated,
         )
 
     @staticmethod
-    def _article_body(article: dict) -> str:
+    def _sort_by_published_desc(articles: List[dict]) -> List[dict]:
+        """Newest first so the daily LLM cap favors recent articles."""
+
+        def sort_key(article: dict) -> str:
+            return article.get("publishedAt") or ""
+
+        return sorted(articles, key=sort_key, reverse=True)
+
+    @staticmethod
+    def _article_body_for_storage(article: dict) -> str:
         return (article.get("content") or article.get("description") or "").strip()
 
     @staticmethod

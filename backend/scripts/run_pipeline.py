@@ -23,12 +23,15 @@ def main() -> int:
     try:
         result = PipelineService(db).run()
         logger.info(
-            "Pipeline %s: fetched=%s matched=%s processed=%s skipped=%s alerts=%s symbols=%s",
+            "Pipeline %s: fetched=%s matched=%s processed=%s no_keyword=%s llm_limit=%s "
+            "llm_budget_start=%s alerts=%s symbols=%s",
             result.status,
             result.articles_fetched,
             result.articles_keyword_matched,
             result.articles_processed,
-            result.articles_skipped,
+            result.articles_skipped_no_keyword,
+            result.articles_skipped_llm_limit,
+            result.llm_budget_remaining_start,
             result.alerts_created,
             result.symbols_aggregated,
         )
