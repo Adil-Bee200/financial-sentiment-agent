@@ -1,264 +1,232 @@
-import logging
 import json
-from typing import List, Optional
-from app.schemas.schemas_v1 import RelevanceResult, SentimentResult
+import logging
+from dataclasses import dataclass
+from typing import Any, List, Optional
+
+from openai import OpenAI, OpenAIError
 
 from app.core.config import settings
+from app.schemas.schemas_v1 import RelevanceResult, SentimentResult
+from app.services.pipeline.llm_content import truncate_at_word
 
 logger = logging.getLogger(__name__)
 
-try:
-    from openai import OpenAI, OpenAIError
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-    logger.warning("OpenAI library not installed. Install with: pip install openai")
+# Hard cap on excerpt length sent to the API (pipeline pre-truncates via LLM_BODY_MAX_CHARS).
+MAX_CONTENT_LENGTH = settings.LLM_BODY_MAX_CHARS + 600
 
-# Maximum length of article content to process 
-MAX_CONTENT_LENGTH = 2000
+_SYSTEM_ANALYZE = (
+    "You analyze financial news for equity investors. "
+    "The excerpt may be truncated. Respond with JSON only."
+)
+
+_ANALYZE_JSON_SCHEMA = (
+    'Keys: "summary" (string, max {max_summary} chars, factual, no fluff), '
+    '"sentiment_score" (float -1.0 bearish to 1.0 bullish), '
+    '"sentiment_label" ("positive"|"negative"|"neutral"), '
+    '"confidence" (float 0.0-1.0). '
+    "Score likely impact on mentioned companies' stocks, not general tone alone."
+)
+
+_SYSTEM_SUMMARIZE = "Financial news summarizer. Plain text only, no markdown."
+
+_SYSTEM_SENTIMENT = "Financial sentiment scorer. JSON only."
+
+_SYSTEM_RELEVANCE = "Financial relevance checker. JSON only."
+
+
+@dataclass(frozen=True)
+class ArticleAnalysis:
+    summary: str
+    sentiment: SentimentResult
 
 
 class LLMService:
-    """
-    Service for interacting with OpenAI API for article processing.
-    """
-    
     def __init__(self, api_key: Optional[str] = None):
-        """
-        Initialize the LLM service.
-        
-        Args:
-            api_key: OpenAI API key. If None, uses OPENAI_API_KEY from settings.
-        """
         self.api_key = api_key or settings.OPENAI_API_KEY
-        
         if not self.api_key:
             raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY in .env")
-        
-        if not OPENAI_AVAILABLE:
-            raise ImportError("OpenAI library not installed. Install with: pip install openai")
-        
         self.client = OpenAI(api_key=self.api_key)
-        self.model = "gpt-4o-mini"  # Cost-effective model
-        self.timeout = 30  # seconds
-        
-        logger.info(f"LLM Service initialized with model: {self.model}")
-    
-    def check_relevance(self, article_title: str, article_content: str, tracked_tickers: List[str]) -> RelevanceResult:
+        self.model = "gpt-4o-mini"
+        self.timeout = 30
+        logger.info("LLM Service initialized with model: %s", self.model)
+
+    def analyze_article(
+        self,
+        article_title: str,
+        article_content: str,
+        max_summary_length: int = 200,
+    ) -> ArticleAnalysis:
         """
-        Check if an article is relevant to any of the tracked tickers.
-        
-        This is the "relevance gate" => filters articles before processing.
-        
-        Args:
-            article_title: Article title
-            article_content: Article content/text (can be truncated)
-            tracked_tickers: List of ticker symbols to check against (e.g., ["NVDA", "AAPL"])
-        
-        Returns:
-            RelevanceResult with relevant flag, companies mentioned, and confidence
+        Single LLM call: investor-focused summary + sentiment for one article.
+        Used by the cron pipeline (preferred over separate summarize + classify).
         """
+        title = article_title.strip()
+        content = self._prepare_content(article_content)
+        user = self._article_message(title, content)
+        system = f"{_SYSTEM_ANALYZE} {_ANALYZE_JSON_SCHEMA.format(max_summary=max_summary_length)}"
+
+        try:
+            raw = self._chat_json(system, user, temperature=0.2)
+            summary = self._coerce_summary(raw.get("summary", ""), content, max_summary_length)
+            sentiment = self._parse_sentiment(raw)
+            return ArticleAnalysis(summary=summary, sentiment=sentiment)
+        except OpenAIError as e:
+            logger.error("OpenAI API error in analyze_article: %s", e)
+            return self._fallback_analysis(content, max_summary_length)
+        except Exception as e:
+            logger.error("Error in analyze_article: %s", e)
+            return self._fallback_analysis(content, max_summary_length)
+
+    def summarize_article(
+        self,
+        article_title: str,
+        article_content: str,
+        max_length: int = 200,
+    ) -> str:
+        title = article_title.strip()
+        content = self._prepare_content(article_content)
+        user = (
+            f"{self._article_message(title, content)}\n\n"
+            f"Write a summary of at most {max_length} characters. "
+            "Focus on financial impact and material facts."
+        )
+        try:
+            text = self._chat_text(_SYSTEM_SUMMARIZE, user, temperature=0.2)
+            return self._coerce_summary(text, content, max_length)
+        except OpenAIError as e:
+            logger.error("OpenAI API error in summarization: %s", e)
+            return self._fallback_summary(content, max_length)
+        except Exception as e:
+            logger.error("Error in summarization: %s", e)
+            return self._fallback_summary(content, max_length)
+
+    def classify_sentiment(self, article_title: str, article_content: str) -> SentimentResult:
+        title = article_title.strip()
+        content = self._prepare_content(article_content)
+        user = (
+            f"{self._article_message(title, content)}\n\n"
+            "Return JSON with sentiment_score (-1..1), sentiment_label, confidence."
+        )
+        try:
+            raw = self._chat_json(_SYSTEM_SENTIMENT, user, temperature=0.1)
+            return self._parse_sentiment(raw)
+        except OpenAIError as e:
+            logger.error("OpenAI API error in sentiment classification: %s", e)
+            return SentimentResult(sentiment_score=0.0, sentiment_label="neutral", confidence=0.0)
+        except Exception as e:
+            logger.error("Error in sentiment classification: %s", e)
+            return SentimentResult(sentiment_score=0.0, sentiment_label="neutral", confidence=0.0)
+
+    def check_relevance(
+        self,
+        article_title: str,
+        article_content: str,
+        tracked_tickers: List[str],
+    ) -> RelevanceResult:
         if not tracked_tickers:
             return RelevanceResult(relevant=False, companies=[], confidence=0.0)
-        
-        tickers_str = ", ".join(tracked_tickers)
-        
-        # Truncate content if too long (to save tokens)
-        max_content_length = MAX_CONTENT_LENGTH
-        if len(article_content) > max_content_length:
-            article_content = article_content[:max_content_length] + "..."
-        
-        prompt = f"""You are a financial news analyzer. Determine if this article is relevant to any of these stock tickers: {tickers_str}
 
-Article Title: {article_title}
-
-Article Content:
-{article_content}
-
-Respond with a JSON object containing:
-- "relevant": true or false
-- "companies": array of ticker symbols mentioned (e.g., ["NVDA"])
-- "confidence": float between 0.0 and 1.0
-
-Only include tickers that are actually mentioned or clearly referenced in the article.
-Be strict, only mark as relevant if there's a clear connection to the tracked tickers."""
-
+        title = article_title.strip()
+        content = self._prepare_content(article_content)
+        tickers = ", ".join(tracked_tickers)
+        user = (
+            f"Tickers: {tickers}\n\n"
+            f"{self._article_message(title, content)}\n\n"
+            'JSON: "relevant" (bool), "companies" (tickers from list only), "confidence" (0-1). '
+            "relevant=true only if the article clearly concerns at least one ticker."
+        )
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a financial news analyzer. Always respond with valid JSON only."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1,  # Low temperature for consistent results
-                timeout=self.timeout
+            raw = self._chat_json(_SYSTEM_RELEVANCE, user, temperature=0.1)
+            companies = [c for c in raw.get("companies", []) if c in tracked_tickers]
+            return RelevanceResult(
+                relevant=bool(raw.get("relevant", False)),
+                companies=companies,
+                confidence=float(raw.get("confidence", 0.0)),
             )
-            
-            result_text = response.choices[0].message.content
-            result = json.loads(result_text)
-            
-            return RelevanceResult(relevant=result.get("relevant", False), companies=result.get("companies", []), confidence=result.get("confidence", 0.0))
-            
         except OpenAIError as e:
-            logger.error(f"OpenAI API error in relevance check: {e}")
-            # Assume relevant if API fails (can be processed later)
-            return RelevanceResult(relevant=True, companies=[], confidence=0.5)
+            logger.error("OpenAI API error in relevance check: %s", e)
+            return RelevanceResult(relevant=False, companies=[], confidence=0.0)
         except Exception as e:
-            logger.error(f"Error in relevance check: {e}")
-            return RelevanceResult(relevant=True, companies=[], confidence=0.5)
-    
-    def summarize_article(self, article_title: str, article_content: str, max_length: int = 200) -> str:
-        """
-        Generate a concise summary of an article.
-        
-        Args:
-            article_title: Article title
-            article_content: Full article content
-            max_length: Maximum length of summary in characters
-        
-        Returns:
-            Summary string
-        """
-        # Truncate content if too long
-        max_content_length = MAX_CONTENT_LENGTH
-        if len(article_content) > max_content_length:
-            article_content = article_content[:max_content_length] + "..."
-        
-        prompt = f"""Summarize this financial news article in {max_length} characters or less.
-Focus on key financial implications, company performance, market impact, and important numbers.
+            logger.error("Error in relevance check: %s", e)
+            return RelevanceResult(relevant=False, companies=[], confidence=0.0)
 
-Title: {article_title}
+    def _prepare_content(self, article_content: str) -> str:
+        content = (article_content or "").strip()
+        if len(content) > MAX_CONTENT_LENGTH:
+            content = truncate_at_word(content, MAX_CONTENT_LENGTH)
+        return content
 
-Content:
-{article_content}
+    @staticmethod
+    def _article_message(title: str, content: str) -> str:
+        return f"Title: {title}\n\nExcerpt:\n{content}"
 
-Provide a concise summary:"""
+    def _chat_json(self, system: str, user: str, temperature: float) -> dict[str, Any]:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            response_format={"type": "json_object"},
+            temperature=temperature,
+            timeout=self.timeout,
+        )
+        return json.loads(response.choices[0].message.content)
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a financial news summarizer. Create concise, informative summaries."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.3,
-                timeout=self.timeout
-            )
-            
-            summary = response.choices[0].message.content.strip()
-            
-            # Ensure summary doesn't exceed max_length
-            if len(summary) > max_length:
-                summary = summary[:max_length].rsplit(' ', 1)[0] + "..."
-            
-            return summary
-            
-        except OpenAIError as e:
-            logger.error(f"OpenAI API error in summarization: {e}")
-            # Fallback: return truncated content
-            return article_content[:max_length] + "..." if len(article_content) > max_length else article_content
-        except Exception as e:
-            logger.error(f"Error in summarization: {e}")
-            return article_content[:max_length] + "..." if len(article_content) > max_length else article_content
-    
-    def classify_sentiment(self, article_title: str, article_content: str) -> SentimentResult:
-        """
-        Classify the sentiment of an article.
-        
-        Returns a sentiment score from -1.0 (very negative) to 1.0 (very positive).
-        
-        Args:
-            article_title: Article title
-            article_content: Article content/text
-        
-        Returns:
-            SentimentResult with score, label, and confidence
-        """
-        # Truncate content if too long
-        max_content_length = MAX_CONTENT_LENGTH
-        if len(article_content) > max_content_length:
-            article_content = article_content[:max_content_length] + "..."
-        
-        prompt = f"""Analyze the sentiment of this financial news article.
-Consider: stock price impact, company performance outlook, market sentiment, investor confidence.
+    def _chat_text(self, system: str, user: str, temperature: float) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=temperature,
+            timeout=self.timeout,
+        )
+        return (response.choices[0].message.content or "").strip()
 
-Title: {article_title}
+    @staticmethod
+    def _coerce_summary(text: str, fallback_source: str, max_length: int) -> str:
+        summary = (text or "").strip()
+        if not summary:
+            return LLMService._fallback_summary(fallback_source, max_length)
+        if len(summary) > max_length:
+            summary = summary[:max_length].rsplit(" ", 1)[0] + "..."
+        return summary
 
-Content:
-{article_content}
+    @staticmethod
+    def _fallback_summary(content: str, max_length: int) -> str:
+        if len(content) <= max_length:
+            return content
+        return content[:max_length].rsplit(" ", 1)[0] + "..."
 
-Respond with a JSON object containing:
-- "sentiment_score": float between -1.0 (very negative) and 1.0 (very positive)
-- "sentiment_label": "positive", "negative", or "neutral"
-- "confidence": float between 0.0 and 1.0
+    def _fallback_analysis(self, content: str, max_summary_length: int) -> ArticleAnalysis:
+        return ArticleAnalysis(
+            summary=self._fallback_summary(content, max_summary_length),
+            sentiment=SentimentResult(sentiment_score=0.0, sentiment_label="neutral", confidence=0.0),
+        )
 
-Examples:
-- Very negative news (scandal, major loss): -0.8 to -1.0
-- Negative news (missed earnings, downgrade): -0.3 to -0.7
-- Neutral news (routine updates): -0.2 to 0.2
-- Positive news (beat earnings, upgrade): 0.3 to 0.7
-- Very positive news (major win, acquisition): 0.8 to 1.0"""
-
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a financial sentiment analyzer. Always respond with valid JSON only."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.2,  # Low temperature for consistent sentiment analysis
-                timeout=self.timeout
-            )
-            
-            result_text = response.choices[0].message.content
-            result = json.loads(result_text)
-            
-            return SentimentResult(
-                sentiment_score=float(result.get("sentiment_score", 0.0)),
-                sentiment_label=result.get("sentiment_label", "neutral"),
-                confidence=float(result.get("confidence", 0.5))
-            )
-            
-        except OpenAIError as e:
-            logger.error(f"OpenAI API error in sentiment classification: {e}")
-            # Return neutral sentiment on error
-            return SentimentResult(sentiment_score=0.0, sentiment_label="neutral", confidence=0.0)
-        except Exception as e:
-            logger.error(f"Error in sentiment classification: {e}")
-            return SentimentResult(sentiment_score=0.0, sentiment_label="neutral", confidence=0.0)
+    @staticmethod
+    def _parse_sentiment(raw: dict[str, Any]) -> SentimentResult:
+        score = float(raw.get("sentiment_score", 0.0))
+        score = max(-1.0, min(1.0, score))
+        label = str(raw.get("sentiment_label", "neutral")).lower()
+        if label not in {"positive", "negative", "neutral"}:
+            if score > 0.2:
+                label = "positive"
+            elif score < -0.2:
+                label = "negative"
+            else:
+                label = "neutral"
+        confidence = float(raw.get("confidence", 0.5))
+        confidence = max(0.0, min(1.0, confidence))
+        return SentimentResult(sentiment_score=score, sentiment_label=label, confidence=confidence)
 
 
-# Singleton instance (can be initialized later)
 _llm_service_instance: Optional[LLMService] = None
 
 
 def get_llm_service() -> LLMService:
-    """
-    Get or create the singleton LLM service instance.
-    
-    Returns:
-        LLMService instance
-    """
     global _llm_service_instance
     if _llm_service_instance is None:
         _llm_service_instance = LLMService()
