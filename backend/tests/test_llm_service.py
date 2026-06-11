@@ -11,7 +11,7 @@ import json
 from unittest.mock import Mock, patch
 from openai import OpenAIError
 
-from app.services.llm.ai_service import LLMService, MAX_CONTENT_LENGTH
+from app.services.llm.ai_service import ArticleAnalysis, LLMService, MAX_CONTENT_LENGTH
 from app.schemas.schemas_v1 import RelevanceResult, SentimentResult
 
 
@@ -113,9 +113,9 @@ class TestRelevanceGate:
             tracked_tickers=sample_tickers
         )
         
-        # Should fail open (assume relevant)
-        assert result.relevant is True
-        assert result.confidence == 0.5
+        # Should fail closed (skip article on API error)
+        assert result.relevant is False
+        assert result.confidence == 0.0
     
     def test_relevance_json_parse_error(self, llm_service, sample_article, sample_tickers):
         """Test handling of invalid JSON response"""
@@ -134,8 +134,8 @@ class TestRelevanceGate:
             tracked_tickers=sample_tickers
         )
         
-        # Should fail open
-        assert result.relevant is True
+        # Should fail closed
+        assert result.relevant is False
 
 
 class TestSummarization:
@@ -361,6 +361,51 @@ class TestSentimentClassification:
         call_args = llm_service.client.chat.completions.create.call_args
         prompt = call_args[1]["messages"][1]["content"]
         assert len(prompt) < len(long_content) + 500
+
+
+class TestAnalyzeArticle:
+    """Tests for combined summary + sentiment (pipeline path)."""
+
+    def test_analyze_article_success(self, llm_service, sample_article):
+        mock_response = {
+            "summary": "NVIDIA unveiled a new AI chip with improved performance.",
+            "sentiment_score": 0.72,
+            "sentiment_label": "positive",
+            "confidence": 0.9,
+        }
+        mock_message = Mock()
+        mock_message.content = json.dumps(mock_response)
+        mock_choice = Mock()
+        mock_choice.message = mock_message
+        mock_response_obj = Mock()
+        mock_response_obj.choices = [mock_choice]
+        llm_service.client.chat.completions.create.return_value = mock_response_obj
+
+        result = llm_service.analyze_article(
+            article_title=sample_article["title"],
+            article_content=sample_article["content"],
+        )
+
+        assert isinstance(result, ArticleAnalysis)
+        assert "NVIDIA" in result.summary or "chip" in result.summary
+        assert result.sentiment.sentiment_label == "positive"
+        assert result.sentiment.sentiment_score == 0.72
+        assert llm_service.client.chat.completions.create.call_count == 1
+        call_kwargs = llm_service.client.chat.completions.create.call_args[1]
+        assert call_kwargs["response_format"] == {"type": "json_object"}
+
+    def test_analyze_article_api_error(self, llm_service, sample_article):
+        llm_service.client.chat.completions.create.side_effect = OpenAIError("API Error")
+
+        result = llm_service.analyze_article(
+            article_title=sample_article["title"],
+            article_content=sample_article["content"],
+        )
+
+        assert isinstance(result.summary, str)
+        assert len(result.summary) > 0
+        assert result.sentiment.sentiment_label == "neutral"
+        assert result.sentiment.sentiment_score == 0.0
 
 
 class TestLLMServiceInitialization:

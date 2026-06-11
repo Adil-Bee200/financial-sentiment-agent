@@ -132,8 +132,9 @@ class PipelineService:
                 continue
 
             title, llm_content = build_llm_input(raw)
-            summary = self.llm.summarize_article(title, llm_content)
-            sentiment = self.llm.classify_sentiment(title, llm_content)
+            analysis = self.llm.analyze_article(title, llm_content)
+            summary = analysis.summary
+            sentiment = analysis.sentiment
             published_at = self._parse_published_at(raw.get("publishedAt"))
             source_name = self._source_name(raw)
             stored_body = self._article_body_for_storage(raw)
