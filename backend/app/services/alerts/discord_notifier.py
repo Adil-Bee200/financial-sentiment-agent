@@ -2,13 +2,15 @@ import logging
 from typing import Optional
 
 import httpx
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.alert import Alerts
 
 logger = logging.getLogger(__name__)
 
-def send_discord_alert_if_configured(alert: Alerts) -> None:
+
+def send_discord_alert_if_configured(alert: Alerts, db: Optional[Session] = None) -> None:
     """
     POST a message to the configured Discord webhook. No-op if URL is unset.
     Failures are logged; they do not affect alert persistence.
@@ -18,8 +20,19 @@ def send_discord_alert_if_configured(alert: Alerts) -> None:
         logger.debug("Discord webhook not configured; skipping notification")
         return
 
+    symbol = "unknown"
+    if alert.tracked_asset is not None:
+        symbol = alert.tracked_asset.symbol
+    elif db is not None:
+        db.refresh(alert, attribute_names=["tracked_asset"])
+        if alert.tracked_asset:
+            symbol = alert.tracked_asset.symbol
+
     payload = {
-        "content": f"Alert ID {alert.alert_id}: {alert.trigger_reason} for {alert.ticker} with sentiment value {alert.sentiment_value}"
+        "content": (
+            f"Alert for **{symbol}**: {alert.trigger_reason} "
+            f"(sentiment={alert.sentiment_value:.4f}, id={alert.alert_id})"
+        )
     }
 
     try:
