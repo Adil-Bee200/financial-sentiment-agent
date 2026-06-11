@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # News API
     NEWS_API_KEY: Optional[str] = None
     NEWS_API_BASE_URL: str = "https://newsapi.org/v2"
+    NEWS_QUERY: str = "financial OR stocks OR earnings"
+    HOURS_BACK: int = 24
+    NEWS_MAX_PAGES: int = 3
 
     # Application
     APP_NAME: str = "Financial Research Agent"
@@ -44,6 +47,7 @@ class Settings(BaseSettings):
     POSITIVE_SENTIMENT_THRESHOLD: float = 0.3
     VOLUME_SPIKE_MULTIPLIER: float = 2.0
     ROLLING_WINDOW_DAYS: int = 7
+    ALERT_COOLDOWN_HOURS: int = 24
 
     class Config:
         env_file = ".env"
