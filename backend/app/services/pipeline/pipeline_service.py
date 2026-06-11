@@ -13,7 +13,6 @@ from app.models.processing_runs import ProcessingRuns
 from app.services.alerts.alert_service import AlertService
 from app.services.filtering.keyword_filter import build_search_text, match_tracked_assets
 from app.services.ingestion.article_ingestion_service import ArticleIngestionService
-from app.services.llm.ai_service import LLMService
 from app.services.pipeline.llm_content import (
     build_llm_input,
     count_llm_articles_today,
@@ -40,16 +39,122 @@ class PipelineResult:
     error: str | None = None
 
 
+@dataclass
+class MatchedArticlePreview:
+    title: str
+    url: str
+    published_at: str
+    source: str
+    symbols: List[str]
+    would_send_to_llm: bool
+
+
+@dataclass
+class PipelinePreviewResult:
+    status: str
+    tracked_symbol_count: int = 0
+    articles_fetched: int = 0
+    articles_new: int = 0
+    articles_keyword_matched: int = 0
+    articles_skipped_no_keyword: int = 0
+    articles_would_llm: int = 0
+    articles_over_llm_budget: int = 0
+    llm_budget_remaining: int = 0
+    matched_articles: List[MatchedArticlePreview] = field(default_factory=list)
+    error: str | None = None
+
+
 class PipelineService:
     """Fetch → dedupe → keyword filter → LLM (capped) → store → rollup → alerts."""
 
     def __init__(self, db: Session):
         self.db = db
         self.ingestion = ArticleIngestionService()
-        self.llm = LLMService()
-        self.sentiment = SentimentService(db)
-        self.alerts = AlertService(db)
+        self._llm = None
+        self._sentiment = None
+        self._alerts = None
         self.assets = TrackedAssetsService(db)
+
+    @property
+    def llm(self):
+        if self._llm is None:
+            from app.services.llm.ai_service import LLMService
+
+            self._llm = LLMService()
+        return self._llm
+
+    @property
+    def sentiment(self):
+        if self._sentiment is None:
+            self._sentiment = SentimentService(self.db)
+        return self._sentiment
+
+    @property
+    def alerts(self):
+        if self._alerts is None:
+            self._alerts = AlertService(self.db)
+        return self._alerts
+
+    def preview(self) -> PipelinePreviewResult:
+        """
+        Dry run: fetch news, dedupe, keyword filter — stop before LLM or DB writes.
+        No OpenAI key required.
+        """
+        try:
+            tracked = self.assets.list_all()
+            if not tracked:
+                logger.warning("No tracked assets — add symbols before previewing the pipeline")
+                return PipelinePreviewResult(status="completed", tracked_symbol_count=0)
+
+            now = datetime.now(timezone.utc)
+            llm_budget = remaining_llm_budget(self.db, now)
+            fetched, new_articles = self._fetch_new_articles(now)
+
+            matched_articles: List[MatchedArticlePreview] = []
+            keyword_matched = 0
+            skipped_no_keyword = 0
+            would_llm = 0
+            over_budget = 0
+
+            for raw in new_articles:
+                matches = match_tracked_assets(build_search_text(raw), tracked)
+                if not matches:
+                    skipped_no_keyword += 1
+                    continue
+
+                keyword_matched += 1
+                send_to_llm = would_llm < llm_budget
+                if send_to_llm:
+                    would_llm += 1
+                else:
+                    over_budget += 1
+
+                matched_articles.append(
+                    MatchedArticlePreview(
+                        title=(raw.get("title") or "").strip(),
+                        url=raw.get("url") or "",
+                        published_at=raw.get("publishedAt") or "",
+                        source=self._source_name(raw),
+                        symbols=[m.symbol for m in matches],
+                        would_send_to_llm=send_to_llm,
+                    )
+                )
+
+            return PipelinePreviewResult(
+                status="completed",
+                tracked_symbol_count=len(tracked),
+                articles_fetched=len(fetched),
+                articles_new=len(new_articles),
+                articles_keyword_matched=keyword_matched,
+                articles_skipped_no_keyword=skipped_no_keyword,
+                articles_would_llm=would_llm,
+                articles_over_llm_budget=over_budget,
+                llm_budget_remaining=llm_budget,
+                matched_articles=matched_articles,
+            )
+        except Exception as exc:
+            logger.exception("Pipeline preview failed")
+            return PipelinePreviewResult(status="error", error=str(exc))
 
     def run(self) -> PipelineResult:
         run = ProcessingRuns(
@@ -97,20 +202,8 @@ class PipelineService:
             llm_budget,
         )
 
-        from_date = (now - timedelta(hours=settings.HOURS_BACK)).strftime("%Y-%m-%d")
-        to_date = now.strftime("%Y-%m-%d")
-
-        fetched = self.ingestion.fetch_articles(
-            query=settings.NEWS_QUERY,
-            from_date=from_date,
-            to_date=to_date,
-            max_pages=settings.NEWS_MAX_PAGES,
-        )
+        fetched, new_articles = self._fetch_new_articles(now)
         run.articles_fetched = len(fetched)
-
-        new_articles = self._sort_by_published_desc(
-            self.ingestion.filter_new_articles(fetched)
-        )
         keyword_matched = 0
         processed = 0
         skipped_no_keyword = 0
@@ -199,6 +292,19 @@ class PipelineService:
             alerts_created=alerts_created,
             symbols_aggregated=symbols_aggregated,
         )
+
+    def _fetch_new_articles(self, now: datetime) -> tuple[List[dict], List[dict]]:
+        from_date = (now - timedelta(hours=settings.HOURS_BACK)).strftime("%Y-%m-%d")
+        to_date = now.strftime("%Y-%m-%d")
+
+        fetched = self.ingestion.fetch_articles(
+            query=settings.NEWS_QUERY,
+            from_date=from_date,
+            to_date=to_date,
+            max_pages=settings.NEWS_MAX_PAGES,
+        )
+        new_articles = self._sort_by_published_desc(self.ingestion.filter_new_articles(fetched))
+        return fetched, new_articles
 
     @staticmethod
     def _sort_by_published_desc(articles: List[dict]) -> List[dict]:
