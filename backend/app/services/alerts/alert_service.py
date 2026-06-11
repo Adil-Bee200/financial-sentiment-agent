@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.alert import Alerts
+from app.models.tracked_assets import TrackedAssets
 from app.services.alerts.discord_notifier import send_discord_alert_if_configured
 from app.services.sentiment.sentiment_service import SentimentService
 
@@ -125,3 +126,60 @@ class AlertService:
             .limit(limit)
             .all()
         )
+
+    def _recent_alert_exists(self, ticker_id: UUID, trigger_reason: str) -> bool:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=settings.ALERT_COOLDOWN_HOURS)
+        return (
+            self.db.query(Alerts)
+            .filter(
+                Alerts.ticker_id == ticker_id,
+                Alerts.trigger_reason == trigger_reason,
+                Alerts.created_at >= cutoff,
+            )
+            .first()
+            is not None
+        )
+
+    def evaluate_tracked_asset(self, asset: TrackedAssets, as_of: datetime) -> int:
+        """Check thresholds for one symbol; returns number of alerts created."""
+        symbol = asset.symbol
+        ticker_id = asset.ticker_id
+        start, end = self.rolling_window_bounds(as_of, settings.ROLLING_WINDOW_DAYS)
+        created = 0
+
+        rolling = self.article_weighted_rolling_sentiment(symbol, start, end)
+        if rolling is not None and rolling < settings.NEGATIVE_SENTIMENT_THRESHOLD:
+            reason = "negative_rolling_sentiment"
+            if not self._recent_alert_exists(ticker_id, reason):
+                self.create_alert(
+                    ticker_id,
+                    f"{symbol} rolling sentiment {rolling:.3f} below {settings.NEGATIVE_SENTIMENT_THRESHOLD}",
+                    rolling,
+                )
+                created += 1
+
+        if rolling is not None and rolling > settings.POSITIVE_SENTIMENT_THRESHOLD:
+            reason = "positive_rolling_sentiment"
+            if not self._recent_alert_exists(ticker_id, reason):
+                self.create_alert(
+                    ticker_id,
+                    f"{symbol} rolling sentiment {rolling:.3f} above {settings.POSITIVE_SENTIMENT_THRESHOLD}",
+                    rolling,
+                )
+                created += 1
+
+        spike = self.volume_spike_ratio_latest_vs_prior(symbol, start, end)
+        if spike is not None:
+            reason = "volume_spike"
+            if not self._recent_alert_exists(ticker_id, reason):
+                self.create_alert(
+                    ticker_id,
+                    f"{symbol} article volume spike ({spike:.1f}x baseline)",
+                    rolling if rolling is not None else 0.0,
+                )
+                created += 1
+
+        return created
+
+    def evaluate_all_tracked(self, assets: List[TrackedAssets], as_of: datetime) -> int:
+        return sum(self.evaluate_tracked_asset(asset, as_of) for asset in assets)
