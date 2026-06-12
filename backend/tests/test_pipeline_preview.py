@@ -39,11 +39,12 @@ class TestPipelinePreview:
             service = PipelineService(db)
         service.assets = assets
         service.ingestion = Mock()
-        service.ingestion.fetch_articles.return_value = fetched
+        service.ingestion.build_date_range.return_value = ("2026-06-06T00:00:00", "2026-06-07T00:00:00")
+        service.ingestion.fetch_for_pipeline.return_value = fetched
         service.ingestion.filter_new_articles.return_value = fetched
 
         with patch(
-            "app.services.pipeline.pipeline_service.remaining_llm_budget",
+            "app.services.pipeline.pipeline_service.remaining_llm_budget_for_run",
             return_value=5,
         ):
             result = service.preview()
@@ -80,11 +81,12 @@ class TestPipelinePreview:
             service = PipelineService(db)
         service.assets = assets
         service.ingestion = Mock()
-        service.ingestion.fetch_articles.return_value = articles
+        service.ingestion.build_date_range.return_value = ("2026-06-06T00:00:00", "2026-06-07T00:00:00")
+        service.ingestion.fetch_for_pipeline.return_value = articles
         service.ingestion.filter_new_articles.return_value = articles
 
         with patch(
-            "app.services.pipeline.pipeline_service.remaining_llm_budget",
+            "app.services.pipeline.pipeline_service.remaining_llm_budget_for_run",
             return_value=1,
         ):
             result = service.preview()

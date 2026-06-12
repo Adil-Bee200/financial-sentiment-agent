@@ -54,6 +54,16 @@ def count_llm_articles_today(db: Session, as_of: datetime | None = None) -> int:
 
 
 def remaining_llm_budget(db: Session, as_of: datetime | None = None) -> int:
+    """Articles still allowed today (UTC day, all runs combined)."""
     as_of = as_of or datetime.now(timezone.utc)
     used = count_llm_articles_today(db, as_of)
     return max(0, settings.MAX_LLM_ARTICLES_PER_DAY - used)
+
+
+def remaining_llm_budget_for_run(db: Session, as_of: datetime | None = None) -> int:
+    """Articles this run may send to the LLM (daily remainder capped per run)."""
+    daily = remaining_llm_budget(db, as_of)
+    per_run = settings.MAX_LLM_ARTICLES_PER_RUN
+    if per_run <= 0:
+        return daily
+    return min(daily, per_run)

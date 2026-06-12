@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     # OpenAI
     OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-5-mini"
 
     # Discord (global webhook; per-user webhooks can be added later)
     DISCORD_WEBHOOK_URL: Optional[str] = None
@@ -34,12 +35,19 @@ class Settings(BaseSettings):
     NEWS_API_KEY: Optional[str] = None
     NEWS_API_BASE_URL: str = "https://newsapi.org/v2"
     NEWS_QUERY: str = "financial OR stocks OR earnings"
-    HOURS_BACK: int = 24
-    NEWS_MAX_PAGES: int = 3
+    HOURS_BACK: int = 48
+    NEWS_MAX_PAGES: int = 5
+    # Extra NewsAPI call per tracked symbol (up to ~100 articles each on free tier).
+    NEWS_SUPPLEMENT_TICKER_FETCH: bool = True
+
+    # Keyword filter (title + description only in pipeline)
+    KEYWORD_MIN_CONFIDENCE: float = 0.90
 
     # LLM cost controls
     LLM_BODY_MAX_CHARS: int = 1000
-    MAX_LLM_ARTICLES_PER_DAY: int = 35
+    MAX_LLM_ARTICLES_PER_DAY: int = 40
+    # Cap each pipeline run so the daily budget spreads across cron runs (0 = daily cap only).
+    MAX_LLM_ARTICLES_PER_RUN: int = 10
 
     # Application
     APP_NAME: str = "Financial Research Agent"

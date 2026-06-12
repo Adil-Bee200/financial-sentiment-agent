@@ -46,7 +46,7 @@ class LLMService:
         if not self.api_key:
             raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY in .env")
         self.client = OpenAI(api_key=self.api_key)
-        self.model = "gpt-4o-mini"
+        self.model = settings.OPENAI_MODEL
         self.timeout = 30
         logger.info("LLM Service initialized with model: %s", self.model)
 

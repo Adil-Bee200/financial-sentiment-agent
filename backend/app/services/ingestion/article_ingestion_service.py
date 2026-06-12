@@ -1,7 +1,9 @@
 import logging
 import requests
 import time
-from typing import List, Dict, Any, Set, Optional
+from datetime import datetime, timedelta, timezone
+from typing import List, Dict, Any, Set, Optional, Sequence
+
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.article import Articles
@@ -29,6 +31,16 @@ class ArticleIngestionService:
         self.retry_delay = 2
 
         logger.info("Article Ingestion Service initialized")
+
+    @staticmethod
+    def build_date_range(
+        hours_back: int,
+        as_of: datetime | None = None,
+    ) -> tuple[str, str]:
+        """ISO datetimes for NewsAPI ``from`` / ``to`` params."""
+        as_of = as_of or datetime.now(timezone.utc)
+        start = as_of - timedelta(hours=hours_back)
+        return start.strftime("%Y-%m-%dT%H:%M:%S"), as_of.strftime("%Y-%m-%dT%H:%M:%S")
 
     def _rate_limit(self):
         elapsed = time.time() - self.last_request_time
@@ -89,6 +101,15 @@ class ArticleIngestionService:
 
                     if data.get("status") == "error":
                         error_msg = data.get("message", "Unknown API error")
+                        error_code = data.get("code", "")
+                        if error_code == "maximumResultsReached":
+                            logger.info(
+                                "NewsAPI result cap reached at page %s (%s)",
+                                page,
+                                error_msg,
+                            )
+                            last_page = True
+                            break
                         logger.error(f"NewsAPI error: {error_msg}")
                         if "rate limit" in error_msg.lower():
                             time.sleep(60)
@@ -151,6 +172,60 @@ class ArticleIngestionService:
 
         logger.info(f"Total articles fetched: {len(all_articles)}")
         return all_articles
+
+    def fetch_for_pipeline(
+        self,
+        *,
+        query: str,
+        from_date: str,
+        to_date: str,
+        max_pages: int,
+        supplement_symbols: Sequence[str] | None = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Broad query plus optional per-symbol searches, merged and URL-deduped.
+
+        NewsAPI developer accounts cap each search at 100 results, so per-ticker
+        fetches are the main way to pull more unique articles without a paid plan.
+        """
+        combined: List[Dict[str, Any]] = []
+        seen_urls: Set[str] = set()
+
+        def merge(batch: List[Dict[str, Any]], label: str) -> None:
+            added = 0
+            for article in batch:
+                url = article.get("url")
+                if not url or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                combined.append(article)
+                added += 1
+            logger.info("Merged %s new articles from %s (%s total unique)", added, label, len(combined))
+
+        merge(
+            self.fetch_articles(
+                query=query,
+                from_date=from_date,
+                to_date=to_date,
+                max_pages=max_pages,
+            ),
+            f"query '{query}'",
+        )
+
+        if supplement_symbols:
+            for symbol in supplement_symbols:
+                merge(
+                    self.fetch_articles(
+                        query=symbol,
+                        from_date=from_date,
+                        to_date=to_date,
+                        max_pages=1,
+                    ),
+                    f"symbol {symbol}",
+                )
+
+        logger.info("Pipeline fetch complete: %s unique articles", len(combined))
+        return combined
 
     def _get_existing_urls(self, article_urls: List[str]) -> Set[str]:
         if not article_urls:

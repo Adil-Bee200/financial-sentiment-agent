@@ -11,12 +11,12 @@ from app.core.config import settings
 from app.models.article import ArticleEntities, Articles
 from app.models.processing_runs import ProcessingRuns
 from app.services.alerts.alert_service import AlertService
-from app.services.filtering.keyword_filter import build_search_text, match_tracked_assets
+from app.services.filtering.keyword_filter import build_match_text, match_tracked_assets
 from app.services.ingestion.article_ingestion_service import ArticleIngestionService
 from app.services.pipeline.llm_content import (
     build_llm_input,
     count_llm_articles_today,
-    remaining_llm_budget,
+    remaining_llm_budget_for_run,
 )
 from app.services.sentiment.sentiment_service import SentimentService
 from app.services.tracked_assets.tracked_assets_service import TrackedAssetsService
@@ -108,8 +108,8 @@ class PipelineService:
                 return PipelinePreviewResult(status="completed", tracked_symbol_count=0)
 
             now = datetime.now(timezone.utc)
-            llm_budget = remaining_llm_budget(self.db, now)
-            fetched, new_articles = self._fetch_new_articles(now)
+            llm_budget = remaining_llm_budget_for_run(self.db, now)
+            fetched, new_articles = self._fetch_new_articles(now, [asset.symbol for asset in tracked])
 
             matched_articles: List[MatchedArticlePreview] = []
             rejected_articles: List[MatchedArticlePreview] = []
@@ -119,7 +119,7 @@ class PipelineService:
             over_budget = 0
 
             for raw in new_articles:
-                matches = match_tracked_assets(build_search_text(raw), tracked)
+                matches = match_tracked_assets(build_match_text(raw), tracked)
                 if not matches:
                     skipped_no_keyword += 1
                     if include_rejected:
@@ -207,16 +207,18 @@ class PipelineService:
             return PipelineResult(run_id=str(run.run_id), status="completed")
 
         now = datetime.now(timezone.utc)
-        llm_budget = remaining_llm_budget(self.db, now)
+        llm_budget = remaining_llm_budget_for_run(self.db, now)
         already_today = count_llm_articles_today(self.db, now)
         logger.info(
-            "LLM daily cap: %s/%s used today, %s slots remaining this run",
+            "LLM budget: %s/%s used today, %s slots this run (daily cap %s, per-run cap %s)",
             already_today,
             settings.MAX_LLM_ARTICLES_PER_DAY,
             llm_budget,
+            settings.MAX_LLM_ARTICLES_PER_DAY,
+            settings.MAX_LLM_ARTICLES_PER_RUN or "off",
         )
 
-        fetched, new_articles = self._fetch_new_articles(now)
+        fetched, new_articles = self._fetch_new_articles(now, [asset.symbol for asset in tracked])
         run.articles_fetched = len(fetched)
         keyword_matched = 0
         processed = 0
@@ -227,7 +229,7 @@ class PipelineService:
         aggregation_dates: Dict[str, Set[datetime]] = {}
 
         for raw in new_articles:
-            matches = match_tracked_assets(build_search_text(raw), tracked)
+            matches = match_tracked_assets(build_match_text(raw), tracked)
             if not matches:
                 skipped_no_keyword += 1
                 continue
@@ -307,15 +309,16 @@ class PipelineService:
             symbols_aggregated=symbols_aggregated,
         )
 
-    def _fetch_new_articles(self, now: datetime) -> tuple[List[dict], List[dict]]:
-        from_date = (now - timedelta(hours=settings.HOURS_BACK)).strftime("%Y-%m-%d")
-        to_date = now.strftime("%Y-%m-%d")
+    def _fetch_new_articles(self, now: datetime, tracked_symbols: List[str] | None = None) -> tuple[List[dict], List[dict]]:
+        from_date, to_date = self.ingestion.build_date_range(settings.HOURS_BACK, now)
+        supplement_symbols = tracked_symbols if settings.NEWS_SUPPLEMENT_TICKER_FETCH else None
 
-        fetched = self.ingestion.fetch_articles(
+        fetched = self.ingestion.fetch_for_pipeline(
             query=settings.NEWS_QUERY,
             from_date=from_date,
             to_date=to_date,
             max_pages=settings.NEWS_MAX_PAGES,
+            supplement_symbols=supplement_symbols,
         )
         new_articles = self._sort_by_published_desc(self.ingestion.filter_new_articles(fetched))
         return fetched, new_articles
