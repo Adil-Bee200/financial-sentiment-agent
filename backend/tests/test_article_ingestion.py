@@ -22,6 +22,18 @@ def _response(articles: list[dict]) -> Mock:
 
 
 class TestArticleIngestionFetch:
+    def test_sends_api_key_in_header_not_query(self):
+        service = ArticleIngestionService(news_api_key="secret-test-key")
+        page_one = [_article("https://example.com/one")]
+
+        with patch("app.services.ingestion.article_ingestion_service.requests.get") as mock_get:
+            mock_get.return_value = _response(page_one)
+            service.fetch_articles(query="financial", max_pages=1)
+
+        call_kwargs = mock_get.call_args.kwargs
+        assert call_kwargs["headers"] == {"X-Api-Key": "secret-test-key"}
+        assert "apiKey" not in call_kwargs["params"]
+
     def test_stops_after_partial_last_page(self):
         service = ArticleIngestionService(news_api_key="test-key")
         page_one = [_article(f"https://example.com/{index}") for index in range(98)]

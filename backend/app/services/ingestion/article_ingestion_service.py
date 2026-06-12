@@ -22,6 +22,7 @@ class ArticleIngestionService:
             raise ValueError("News API base URL is required. Set NEWS_API_BASE_URL in .env")
 
         self.news_api_endpoint = f"{self.news_api_base_url}/everything"
+        self._request_headers = {"X-Api-Key": self.news_api_key}
         self.last_request_time = 0
         self.min_request_interval = 1.0
         self.max_retries = 3
@@ -58,7 +59,6 @@ class ArticleIngestionService:
         params = {
             "q": query,
             "sortBy": "publishedAt",
-            "apiKey": self.news_api_key,
             "pageSize": 100,
         }
         if from_date:
@@ -81,6 +81,7 @@ class ArticleIngestionService:
                     response = requests.get(
                         self.news_api_endpoint,
                         params=params,
+                        headers=self._request_headers,
                         timeout=30,
                     )
                     response.raise_for_status()
