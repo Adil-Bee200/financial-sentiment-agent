@@ -37,6 +37,17 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="List only articles that would be sent to the LLM this run",
     )
+    parser.add_argument(
+        "--show-rejected",
+        action="store_true",
+        help="Also list articles that did not match any tracked ticker",
+    )
+    parser.add_argument(
+        "--rejected-limit",
+        type=int,
+        default=25,
+        help="Max rejected titles to print with --show-rejected (default: 25)",
+    )
     return parser
 
 
@@ -66,7 +77,13 @@ def _preview_to_dict(result: PipelinePreviewResult) -> dict:
     }
 
 
-def _print_human(result: PipelinePreviewResult, *, only_llm: bool) -> None:
+def _print_human(
+    result: PipelinePreviewResult,
+    *,
+    only_llm: bool,
+    show_rejected: bool,
+    rejected_limit: int,
+) -> None:
     if result.error:
         logger.error("Preview failed: %s", result.error)
         return
@@ -106,16 +123,37 @@ def _print_human(result: PipelinePreviewResult, *, only_llm: bool) -> None:
             article.published_at,
         )
 
+    if show_rejected and result.rejected_articles:
+        rejected = result.rejected_articles[:rejected_limit]
+        logger.info(
+            "Rejected articles (showing %s of %s):",
+            len(rejected),
+            len(result.rejected_articles),
+        )
+        for index, article in enumerate(rejected, start=1):
+            logger.info(
+                "%s. %s — %s — %s",
+                index,
+                article.title,
+                article.source,
+                article.published_at,
+            )
+
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     db = SessionLocal()
     try:
-        result = PipelineService(db).preview()
+        result = PipelineService(db).preview(include_rejected=args.show_rejected)
         if args.json:
             print(json.dumps(_preview_to_dict(result), indent=2))
         else:
-            _print_human(result, only_llm=args.only_llm)
+            _print_human(
+                result,
+                only_llm=args.only_llm,
+                show_rejected=args.show_rejected,
+                rejected_limit=args.rejected_limit,
+            )
 
         if result.status == "error":
             return 1

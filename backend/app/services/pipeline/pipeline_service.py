@@ -61,6 +61,7 @@ class PipelinePreviewResult:
     articles_over_llm_budget: int = 0
     llm_budget_remaining: int = 0
     matched_articles: List[MatchedArticlePreview] = field(default_factory=list)
+    rejected_articles: List[MatchedArticlePreview] = field(default_factory=list)
     error: str | None = None
 
 
@@ -95,7 +96,7 @@ class PipelineService:
             self._alerts = AlertService(self.db)
         return self._alerts
 
-    def preview(self) -> PipelinePreviewResult:
+    def preview(self, *, include_rejected: bool = False) -> PipelinePreviewResult:
         """
         Dry run: fetch news, dedupe, keyword filter — stop before LLM or DB writes.
         No OpenAI key required.
@@ -111,6 +112,7 @@ class PipelineService:
             fetched, new_articles = self._fetch_new_articles(now)
 
             matched_articles: List[MatchedArticlePreview] = []
+            rejected_articles: List[MatchedArticlePreview] = []
             keyword_matched = 0
             skipped_no_keyword = 0
             would_llm = 0
@@ -120,6 +122,17 @@ class PipelineService:
                 matches = match_tracked_assets(build_search_text(raw), tracked)
                 if not matches:
                     skipped_no_keyword += 1
+                    if include_rejected:
+                        rejected_articles.append(
+                            MatchedArticlePreview(
+                                title=(raw.get("title") or "").strip(),
+                                url=raw.get("url") or "",
+                                published_at=raw.get("publishedAt") or "",
+                                source=self._source_name(raw),
+                                symbols=[],
+                                would_send_to_llm=False,
+                            )
+                        )
                     continue
 
                 keyword_matched += 1
@@ -151,6 +164,7 @@ class PipelineService:
                 articles_over_llm_budget=over_budget,
                 llm_budget_remaining=llm_budget,
                 matched_articles=matched_articles,
+                rejected_articles=rejected_articles,
             )
         except Exception as exc:
             logger.exception("Pipeline preview failed")

@@ -68,10 +68,13 @@ class ArticleIngestionService:
 
         logger.info(f"Fetching articles with query: '{query}', pages: {max_pages}")
 
+        seen_urls: Set[str] = set()
+
         while page <= max_pages:
             params["page"] = page
             self._rate_limit()
-            articles = []
+            articles: List[Dict[str, Any]] = []
+            last_page = False
 
             for attempt in range(self.max_retries):
                 try:
@@ -94,17 +97,29 @@ class ArticleIngestionService:
                     articles = data.get("articles", [])
                     if not articles:
                         logger.info(f"No more articles found at page {page}")
+                        last_page = True
                         break
 
                     valid_articles = [a for a in articles if self._validate_article(a)]
-                    all_articles.extend(valid_articles)
+                    added = 0
+                    for article in valid_articles:
+                        url = article.get("url")
+                        if url and url in seen_urls:
+                            continue
+                        if url:
+                            seen_urls.add(url)
+                        all_articles.append(article)
+                        added += 1
+
                     logger.info(
                         f"Page {page}: Fetched {len(articles)} articles "
-                        f"({len(valid_articles)} valid, {len(articles) - len(valid_articles)} invalid)"
+                        f"({added} new, {len(valid_articles) - added} duplicate, "
+                        f"{len(articles) - len(valid_articles)} invalid)"
                     )
 
                     if len(articles) < params["pageSize"]:
                         logger.info("Reached last page of results")
+                        last_page = True
                         break
 
                     page += 1
@@ -130,7 +145,7 @@ class ArticleIngestionService:
                     logger.error(f"Unexpected error fetching articles: {e}")
                     break
 
-            if not articles:
+            if not articles or last_page:
                 break
 
         logger.info(f"Total articles fetched: {len(all_articles)}")
