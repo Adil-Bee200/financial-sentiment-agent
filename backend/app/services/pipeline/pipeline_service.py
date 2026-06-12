@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.models.article import ArticleEntities, Articles
 from app.models.processing_runs import ProcessingRuns
 from app.services.alerts.alert_service import AlertService
-from app.services.filtering.keyword_filter import build_match_text, match_tracked_assets
+from app.services.filtering.article_scorer import rank_articles_for_llm
 from app.services.ingestion.article_ingestion_service import ArticleIngestionService
 from app.services.pipeline.llm_content import (
     build_llm_input,
@@ -47,6 +47,7 @@ class MatchedArticlePreview:
     source: str
     symbols: List[str]
     would_send_to_llm: bool
+    priority_score: float = 0.0
 
 
 @dataclass
@@ -118,24 +119,28 @@ class PipelineService:
             would_llm = 0
             over_budget = 0
 
-            for raw in new_articles:
-                matches = match_tracked_assets(build_match_text(raw), tracked)
-                if not matches:
-                    skipped_no_keyword += 1
-                    if include_rejected:
-                        rejected_articles.append(
-                            MatchedArticlePreview(
-                                title=(raw.get("title") or "").strip(),
-                                url=raw.get("url") or "",
-                                published_at=raw.get("publishedAt") or "",
-                                source=self._source_name(raw),
-                                symbols=[],
-                                would_send_to_llm=False,
-                            )
-                        )
-                    continue
+            ranked_candidates, skipped_no_keyword = rank_articles_for_llm(new_articles, tracked)
+            keyword_matched = len(ranked_candidates)
 
-                keyword_matched += 1
+            if include_rejected:
+                matched_urls = {candidate.raw.get("url") for candidate in ranked_candidates}
+                for raw in new_articles:
+                    if raw.get("url") in matched_urls:
+                        continue
+                    rejected_articles.append(
+                        MatchedArticlePreview(
+                            title=(raw.get("title") or "").strip(),
+                            url=raw.get("url") or "",
+                            published_at=raw.get("publishedAt") or "",
+                            source=self._source_name(raw),
+                            symbols=[],
+                            would_send_to_llm=False,
+                        )
+                    )
+
+            for candidate in ranked_candidates:
+                raw = candidate.raw
+                matches = candidate.matches
                 send_to_llm = would_llm < llm_budget
                 if send_to_llm:
                     would_llm += 1
@@ -150,6 +155,7 @@ class PipelineService:
                         source=self._source_name(raw),
                         symbols=[m.symbol for m in matches],
                         would_send_to_llm=send_to_llm,
+                        priority_score=candidate.priority_score,
                     )
                 )
 
@@ -228,13 +234,12 @@ class PipelineService:
         symbols_touched: Set[str] = set()
         aggregation_dates: Dict[str, Set[datetime]] = {}
 
-        for raw in new_articles:
-            matches = match_tracked_assets(build_match_text(raw), tracked)
-            if not matches:
-                skipped_no_keyword += 1
-                continue
+        ranked_candidates, skipped_no_keyword = rank_articles_for_llm(new_articles, tracked)
+        keyword_matched = len(ranked_candidates)
 
-            keyword_matched += 1
+        for candidate in ranked_candidates:
+            raw = candidate.raw
+            matches = candidate.matches
 
             if llm_used_this_run >= llm_budget:
                 skipped_llm_limit += 1
@@ -276,7 +281,12 @@ class PipelineService:
             self.db.commit()
             processed += 1
             llm_used_this_run += 1
-            logger.info("LLM processed: %s (%s)", title[:80], ", ".join(m.symbol for m in matches))
+            logger.info(
+                "LLM processed (score=%.2f): %s (%s)",
+                candidate.priority_score,
+                title[:80],
+                ", ".join(m.symbol for m in matches),
+            )
 
         symbols_aggregated: List[str] = []
         for symbol in sorted(symbols_touched):

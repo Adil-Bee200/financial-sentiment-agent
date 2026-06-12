@@ -71,6 +71,7 @@ def _preview_to_dict(result: PipelinePreviewResult) -> dict:
                 "source": article.source,
                 "symbols": article.symbols,
                 "would_send_to_llm": article.would_send_to_llm,
+                "priority_score": round(article.priority_score, 3),
             }
             for article in result.matched_articles
         ],
@@ -114,9 +115,10 @@ def _print_human(
         llm_tag = "LLM" if article.would_send_to_llm else "over budget"
         symbols = ", ".join(article.symbols)
         logger.info(
-            "%s. [%s] (%s) %s — %s — %s",
+            "%s. [%s] (score=%.2f, %s) %s — %s — %s",
             index,
             symbols,
+            article.priority_score,
             llm_tag,
             article.title,
             article.source,
