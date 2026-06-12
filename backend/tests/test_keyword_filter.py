@@ -28,6 +28,20 @@ class TestKeywordFilter:
         assert len(matches) == 1
         assert matches[0].symbol == "AAPL"
 
+    def test_matches_press_name_without_ticker(self):
+        assets = [_asset("NVDA", company_name="NVIDIA Corporation")]
+        text = "Nvidia unveils new AI chip for data centers"
+        matches = match_tracked_assets(text, assets)
+        assert len(matches) == 1
+        assert matches[0].symbol == "NVDA"
+
+    def test_matches_common_alias(self):
+        assets = [_asset("GOOGL", company_name="Alphabet Inc")]
+        text = "Google parent reports cloud revenue growth"
+        matches = match_tracked_assets(text, assets)
+        assert len(matches) == 1
+        assert matches[0].symbol == "GOOGL"
+
     def test_no_match_returns_empty(self):
         assets = [_asset("MSFT")]
         matches = match_tracked_assets("Unrelated weather forecast", assets)
