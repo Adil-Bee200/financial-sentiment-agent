@@ -71,6 +71,13 @@ class TestKeywordFilter:
         matches = match_tracked_assets(text, assets, min_confidence=0.95)
         assert matches == []
 
+    def test_matches_meta_ticker_uppercase_only(self):
+        assets = [_asset("META", company_name="Meta Platforms Inc")]
+        text = "META shares rise after strong ad revenue"
+        matches = match_tracked_assets(text, assets)
+        assert len(matches) == 1
+        assert matches[0].symbol == "META"
+
     def test_no_match_returns_empty(self):
         assets = [_asset("MSFT")]
         matches = match_tracked_assets("Unrelated weather forecast", assets)

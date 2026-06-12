@@ -17,6 +17,9 @@ _SYMBOL_ALIASES: dict[str, tuple[str, ...]] = {
     "GS": ("Goldman Sachs",),
 }
 
+
+_CASE_SENSITIVE_SYMBOLS = frozenset({"META"})
+
 _LEGAL_SUFFIXES = (
     "Corporation",
     "Incorporated",
@@ -79,7 +82,8 @@ def _compile_patterns(asset: TrackedAssets) -> List[tuple[re.Pattern[str], float
 
     # Short tickers (e.g. GS) are prone to false positives as bare words.
     if len(symbol) >= 3:
-        patterns.append((re.compile(rf"\b{re.escape(symbol)}\b", re.IGNORECASE), 0.95))
+        flags = 0 if symbol in _CASE_SENSITIVE_SYMBOLS else re.IGNORECASE
+        patterns.append((re.compile(rf"\b{re.escape(symbol)}\b", flags), 0.95))
 
     for alias in _SYMBOL_ALIASES.get(symbol, ()):
         if len(alias) >= 5 or " " in alias:
