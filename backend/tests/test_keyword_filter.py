@@ -1,7 +1,11 @@
 from uuid import uuid4
 
 from app.models.tracked_assets import TrackedAssets
-from app.services.filtering.keyword_filter import build_search_text, match_tracked_assets
+from app.services.filtering.keyword_filter import (
+    build_match_text,
+    build_search_text,
+    match_tracked_assets,
+)
 
 
 def _asset(symbol: str, company_name: str | None = None) -> TrackedAssets:
@@ -23,7 +27,7 @@ class TestKeywordFilter:
 
     def test_matches_company_name(self):
         assets = [_asset("AAPL", company_name="Apple Inc")]
-        text = "Apple Inc announces new product line"
+        text = "AAPL announces new product line after earnings beat"
         matches = match_tracked_assets(text, assets)
         assert len(matches) == 1
         assert matches[0].symbol == "AAPL"
@@ -42,10 +46,46 @@ class TestKeywordFilter:
         assert len(matches) == 1
         assert matches[0].symbol == "GOOGL"
 
+    def test_rejects_generic_apple_without_ticker(self):
+        assets = [_asset("AAPL", company_name="Apple Inc")]
+        text = "Apple harvest forecast improves in Washington state"
+        matches = match_tracked_assets(text, assets)
+        assert matches == []
+
+    def test_rejects_short_ticker_bare_word(self):
+        assets = [_asset("GS", company_name="Goldman Sachs Group Inc")]
+        text = "Fed signals GS tightening ahead of jobs report"
+        matches = match_tracked_assets(text, assets)
+        assert matches == []
+
+    def test_matches_short_ticker_as_dollar_symbol(self):
+        assets = [_asset("GS", company_name="Goldman Sachs Group Inc")]
+        text = "Analysts lift price target on $GS after earnings"
+        matches = match_tracked_assets(text, assets)
+        assert len(matches) == 1
+        assert matches[0].symbol == "GS"
+
+    def test_min_confidence_blocks_weak_name_only(self):
+        assets = [_asset("META", company_name="Meta Platforms Inc")]
+        text = "Developers discuss meta tags in HTML templates"
+        matches = match_tracked_assets(text, assets, min_confidence=0.95)
+        assert matches == []
+
     def test_no_match_returns_empty(self):
         assets = [_asset("MSFT")]
         matches = match_tracked_assets("Unrelated weather forecast", assets)
         assert matches == []
+
+    def test_build_match_text_omits_body(self):
+        article = {
+            "title": "Title here",
+            "description": "Desc here",
+            "content": "NVDA secret body mention",
+        }
+        text = build_match_text(article)
+        assert "Title here" in text
+        assert "Desc here" in text
+        assert "NVDA secret body mention" not in text
 
     def test_build_search_text_combines_fields(self):
         article = {

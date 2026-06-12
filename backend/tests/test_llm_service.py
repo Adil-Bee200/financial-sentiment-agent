@@ -423,8 +423,10 @@ class TestLLMServiceInitialization:
         with patch('app.services.llm.ai_service.OpenAI') as mock_openai, \
              patch('app.services.llm.ai_service.settings') as mock_settings:
             mock_settings.OPENAI_API_KEY = "settings-key"
+            mock_settings.OPENAI_MODEL = "gpt-5-mini"
             service = LLMService()
             assert service.api_key == "settings-key"
+            assert service.model == "gpt-5-mini"
             mock_openai.assert_called_once_with(api_key="settings-key")
     
     def test_init_missing_api_key_raises_error(self):
