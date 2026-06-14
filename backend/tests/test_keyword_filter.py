@@ -78,6 +78,32 @@ class TestKeywordFilter:
         assert len(matches) == 1
         assert matches[0].symbol == "META"
 
+    def test_rejects_french_bac_exam_false_positive(self):
+        assets = [_asset("BAC", company_name="Bank of America Corp")]
+        text = "Bac 2026 : Découvrez les sujets de la première épreuve anticipée de maths"
+        matches = match_tracked_assets(text, assets)
+        assert matches == []
+
+    def test_matches_bac_via_company_alias(self):
+        assets = [_asset("BAC", company_name="Bank of America Corp")]
+        text = "Bank of America Corp reports quarterly earnings beat"
+        matches = match_tracked_assets(text, assets)
+        assert len(matches) == 1
+        assert matches[0].symbol == "BAC"
+
+    def test_rejects_bare_amzn_release_tag(self):
+        assets = [_asset("AMZN", company_name="Amazon.com Inc")]
+        text = "Sleepless City 2025 720p AMZN WEB-DL H264-MADSKY"
+        matches = match_tracked_assets(text, assets)
+        assert matches == []
+
+    def test_matches_amazon_via_alias(self):
+        assets = [_asset("AMZN", company_name="Amazon.com Inc")]
+        text = "Amazon stock rises after AWS revenue beats estimates"
+        matches = match_tracked_assets(text, assets)
+        assert len(matches) == 1
+        assert matches[0].symbol == "AMZN"
+
     def test_no_match_returns_empty(self):
         assets = [_asset("MSFT")]
         matches = match_tracked_assets("Unrelated weather forecast", assets)

@@ -12,11 +12,15 @@ _SYMBOL_ALIASES: dict[str, tuple[str, ...]] = {
     "META": ("Facebook", "Meta Platforms"),
     "NVDA": ("Nvidia",),
     "MSFT": ("Microsoft",),
-    "JPM": ("JPMorgan",),
+    "JPM": ("JPMorgan", "JPMorgan Chase"),
     "BAC": ("Bank of America",),
     "GS": ("Goldman Sachs",),
+    "AMZN": ("Amazon",),
 }
 
+
+# Bare ticker tokens that collide with non-financial text (French "Bac", release tags "AMZN").
+_NO_BARE_TICKER_SYMBOLS = frozenset({"BAC", "AMZN"})
 
 _CASE_SENSITIVE_SYMBOLS = frozenset({"META"})
 
@@ -81,7 +85,7 @@ def _compile_patterns(asset: TrackedAssets) -> List[tuple[re.Pattern[str], float
     patterns.append((re.compile(rf"\${re.escape(symbol)}\b", re.IGNORECASE), 1.0))
 
     # Short tickers (e.g. GS) are prone to false positives as bare words.
-    if len(symbol) >= 3:
+    if len(symbol) >= 3 and symbol not in _NO_BARE_TICKER_SYMBOLS:
         flags = 0 if symbol in _CASE_SENSITIVE_SYMBOLS else re.IGNORECASE
         patterns.append((re.compile(rf"\b{re.escape(symbol)}\b", flags), 0.95))
 

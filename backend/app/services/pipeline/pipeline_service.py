@@ -283,7 +283,7 @@ class PipelineService:
             processed += 1
             llm_used_this_run += 1
             logger.info(
-                "LLM processed (score=%.2f): %s (%s)",
+                "LLM processed (priority=%.2f): %s (%s)",
                 candidate.priority_score,
                 title[:80],
                 ", ".join(m.symbol for m in matches),

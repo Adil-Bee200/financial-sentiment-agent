@@ -78,6 +78,8 @@ class ArticleIngestionService:
             params["from"] = from_date
         if to_date:
             params["to"] = to_date
+        if settings.NEWS_LANGUAGE:
+            params["language"] = settings.NEWS_LANGUAGE
 
         logger.info(f"Fetching articles with query: '{query}', pages: {max_pages}")
 
