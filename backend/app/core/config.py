@@ -1,5 +1,11 @@
-from pydantic_settings import BaseSettings
+from pathlib import Path
 from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Resolve backend/.env from this file (app/core/config.py), not the process cwd.
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+ENV_FILE = BACKEND_DIR / ".env"
 
 
 class Settings(BaseSettings):
@@ -61,9 +67,11 @@ class Settings(BaseSettings):
     ROLLING_WINDOW_DAYS: int = 7
     ALERT_COOLDOWN_HOURS: int = 24
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_FILE),
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+    )
 
 
 settings = Settings()
