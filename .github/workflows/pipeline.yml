@@ -2,8 +2,8 @@ name: News pipeline
 
 on:
   schedule:
-    # Once daily at 12:00 UTC
-    - cron: "0 12 * * *"
+    # Daily after US market close (4 PM ET). 21:00 UTC ≈ 4 PM EST / 5 PM EDT.
+    - cron: "0 21 * * *"
   workflow_dispatch:
 
 jobs:
@@ -36,4 +36,5 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          APP_TIMEZONE: America/New_York
         run: python -m scripts.run_pipeline
