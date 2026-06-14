@@ -1,10 +1,11 @@
 import logging
 import requests
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Set, Optional, Sequence
 
 from app.core.config import settings
+from app.core.timezone_util import now as app_now
 from app.core.database import SessionLocal
 from app.models.article import Articles
 
@@ -38,7 +39,7 @@ class ArticleIngestionService:
         as_of: datetime | None = None,
     ) -> tuple[str, str]:
         """ISO datetimes for NewsAPI ``from`` / ``to`` params."""
-        as_of = as_of or datetime.now(timezone.utc)
+        as_of = as_of or app_now()
         start = as_of - timedelta(hours=hours_back)
         return start.strftime("%Y-%m-%dT%H:%M:%S"), as_of.strftime("%Y-%m-%dT%H:%M:%S")
 

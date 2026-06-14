@@ -1,11 +1,12 @@
 """Shape article text for LLM calls and track daily LLM usage."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.timezone_util import calendar_day_bounds, now
 from app.models.article import ArticleEntities
 
 
@@ -38,10 +39,9 @@ def build_llm_input(article: dict, body_max_chars: int | None = None) -> tuple[s
 
 
 def count_llm_articles_today(db: Session, as_of: datetime | None = None) -> int:
-    """Distinct articles that received LLM processing today (UTC)."""
-    as_of = as_of or datetime.now(timezone.utc)
-    day_start = datetime.combine(as_of.date(), datetime.min.time(), tzinfo=timezone.utc)
-    day_end = day_start + timedelta(days=1)
+    """Distinct articles that received LLM processing today (app timezone day)."""
+    as_of = as_of or now()
+    day_start, day_end = calendar_day_bounds(as_of)
     return (
         db.query(func.count(func.distinct(ArticleEntities.article_id)))
         .filter(
@@ -54,8 +54,8 @@ def count_llm_articles_today(db: Session, as_of: datetime | None = None) -> int:
 
 
 def remaining_llm_budget(db: Session, as_of: datetime | None = None) -> int:
-    """Articles still allowed today (UTC day, all runs combined)."""
-    as_of = as_of or datetime.now(timezone.utc)
+    """Articles still allowed today (app timezone day, all runs combined)."""
+    as_of = as_of or now()
     used = count_llm_articles_today(db, as_of)
     return max(0, settings.MAX_LLM_ARTICLES_PER_DAY - used)
 

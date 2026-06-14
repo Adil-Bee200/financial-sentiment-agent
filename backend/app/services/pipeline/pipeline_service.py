@@ -1,13 +1,14 @@
 import logging
 import traceback
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Dict, List, Set
 
 from dateutil import parser as date_parser
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.timezone_util import now as app_now
 from app.models.article import ArticleEntities, Articles
 from app.models.processing_runs import ProcessingRuns
 from app.services.alerts.alert_service import AlertService
@@ -108,7 +109,7 @@ class PipelineService:
                 logger.warning("No tracked assets — add symbols before previewing the pipeline")
                 return PipelinePreviewResult(status="completed", tracked_symbol_count=0)
 
-            now = datetime.now(timezone.utc)
+            now = app_now()
             llm_budget = remaining_llm_budget_for_run(self.db, now)
             fetched, new_articles = self._fetch_new_articles(now, [asset.symbol for asset in tracked])
 
@@ -191,7 +192,7 @@ class PipelineService:
         except Exception as exc:
             logger.exception("Pipeline failed")
             run.status = "error"
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = app_now()
             run.raw_text = traceback.format_exc()[-4000:]
             self.db.commit()
             return PipelineResult(
@@ -207,12 +208,12 @@ class PipelineService:
         if not tracked:
             logger.warning("No tracked assets — add symbols before running the pipeline")
             run.status = "completed"
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = app_now()
             run.raw_text = "No tracked assets configured"
             self.db.commit()
             return PipelineResult(run_id=str(run.run_id), status="completed")
 
-        now = datetime.now(timezone.utc)
+        now = app_now()
         llm_budget = remaining_llm_budget_for_run(self.db, now)
         already_today = count_llm_articles_today(self.db, now)
         logger.info(
@@ -264,7 +265,7 @@ class PipelineService:
             self.db.add(article)
             self.db.flush()
 
-            processed_at = datetime.now(timezone.utc)
+            processed_at = app_now()
             for match in matches:
                 entity = ArticleEntities(
                     article_id=article.article_id,
@@ -298,7 +299,7 @@ class PipelineService:
 
         run.num_processed = processed
         run.status = "completed"
-        run.finished_at = datetime.now(timezone.utc)
+        run.finished_at = app_now()
         run.raw_text = (
             f"keyword_matched={keyword_matched}, no_keyword={skipped_no_keyword}, "
             f"llm_limit_skipped={skipped_llm_limit}, llm_used_run={llm_used_this_run}, "
@@ -356,7 +357,7 @@ class PipelineService:
     @staticmethod
     def _parse_published_at(value: str | None) -> datetime:
         if not value:
-            return datetime.now(timezone.utc)
+            return app_now()
         parsed = date_parser.isoparse(value)
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=timezone.utc)

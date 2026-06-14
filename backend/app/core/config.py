@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     ROLLING_WINDOW_DAYS: int = 7
     ALERT_COOLDOWN_HOURS: int = 24
 
+    # Business calendar timezone (US Eastern — handles EST/EDT automatically)
+    APP_TIMEZONE: str = "America/New_York"
+
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE),
         env_file_encoding="utf-8",

@@ -161,28 +161,32 @@ class LLMService:
         return f"Title: {title}\n\nExcerpt:\n{content}"
 
     def _chat_json(self, system: str, user: str, temperature: float) -> dict[str, Any]:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            response_format={"type": "json_object"},
-            temperature=temperature,
-            timeout=self.timeout,
-        )
+            "response_format": {"type": "json_object"},
+            "timeout": self.timeout,
+        }
+        if not self.model.startswith("gpt-5"):
+            kwargs["temperature"] = temperature
+        response = self.client.chat.completions.create(**kwargs)
         return json.loads(response.choices[0].message.content)
 
     def _chat_text(self, system: str, user: str, temperature: float) -> str:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            temperature=temperature,
-            timeout=self.timeout,
-        )
+            "timeout": self.timeout,
+        }
+        if not self.model.startswith("gpt-5"):
+            kwargs["temperature"] = temperature
+        response = self.client.chat.completions.create(**kwargs)
         return (response.choices[0].message.content or "").strip()
 
     @staticmethod

@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.core.timezone_util import app_tz, calendar_day_bounds, start_of_local_day, to_local_date
 from app.models.article import ArticleEntities, Articles
 from app.models.sentiment import SentimentDaily
 from app.models.tracked_assets import TrackedAssets
@@ -24,15 +25,11 @@ class SentimentService:
         return asset.ticker_id
 
     def _to_date(self, value: datetime | date) -> date:
-        if isinstance(value, datetime):
-            return value.date()
-        return value
+        return to_local_date(value)
 
     def _day_bounds(self, value: datetime | date) -> Tuple[datetime, datetime]:
-        """UTC calendar day [start, end) for filtering article published_at."""
-        d = self._to_date(value)
-        start = datetime.combine(d, datetime.min.time())
-        return start, start + timedelta(days=1)
+        """Application timezone calendar day [start, end) for filtering article published_at."""
+        return calendar_day_bounds(value)
 
     def _entities_for_symbol_on_date(self, symbol: str, value: datetime | date) -> List[ArticleEntities]:
         day_start, day_end = self._day_bounds(value)
@@ -182,7 +179,9 @@ class SentimentService:
 
     def normalize_date_to_midnight(self, value: datetime) -> datetime:
         """Kept for alert service window helpers."""
-        return value.replace(hour=0, minute=0, second=0, microsecond=0)
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=app_tz())
+        return start_of_local_day(value)
 
     def aggregate_sentiment_for_ticker(self, symbol: str, day: datetime | date) -> SentimentDaily:
         day_date = self._to_date(day)

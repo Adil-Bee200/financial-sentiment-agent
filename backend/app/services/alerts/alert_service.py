@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.timezone_util import now as app_now
 from app.models.alert import Alerts
 from app.models.tracked_assets import TrackedAssets
 from app.services.alerts.discord_notifier import send_discord_alert_if_configured
@@ -128,7 +129,7 @@ class AlertService:
         )
 
     def _recent_alert_exists(self, ticker_id: UUID, trigger_reason: str) -> bool:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=settings.ALERT_COOLDOWN_HOURS)
+        cutoff = app_now() - timedelta(hours=settings.ALERT_COOLDOWN_HOURS)
         return (
             self.db.query(Alerts)
             .filter(
