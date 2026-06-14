@@ -43,11 +43,17 @@ class Settings(BaseSettings):
     NEWS_QUERY: str = "financial OR stocks OR earnings"
     HOURS_BACK: int = 48
     NEWS_MAX_PAGES: int = 5
+    # ISO-639-1 language sent to NewsAPI (empty string disables the param).
+    NEWS_LANGUAGE: str = "en"
     # Extra NewsAPI call per tracked symbol (up to ~100 articles each on free tier).
     NEWS_SUPPLEMENT_TICKER_FETCH: bool = True
 
     # Keyword filter (title + description only in pipeline)
     KEYWORD_MIN_CONFIDENCE: float = 0.90
+    # Minimum keyword priority score (0–1) before an article may use LLM budget.
+    MIN_ARTICLE_PRIORITY_SCORE: float = 0.90
+    # Min share of Latin letters when NEWS_LANGUAGE is set (post-fetch safety net).
+    ARTICLE_MIN_ASCII_LETTER_RATIO: float = 0.85
 
     # LLM cost controls
     LLM_BODY_MAX_CHARS: int = 1000
