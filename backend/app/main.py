@@ -1,5 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.limiter import limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi._rate_limit_exceeded_handler import _rate_limit_exceeded_handler
 
 app = FastAPI()
 
@@ -11,10 +14,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 @app.get("/")
-def read_root():
+@limiter.limit("10/minute")
+def read_root(request: Request):
     return {"app_name": "Financial Research Agent", "version": "1.0.0", "status": "running"}
 
 @app.get("/health")
-def health_check():
+@limiter.limit("10/minute")
+def health_check(request: Request):
     return {"status": "ok"}
