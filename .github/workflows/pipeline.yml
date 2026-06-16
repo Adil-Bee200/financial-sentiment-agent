@@ -30,6 +30,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: alembic upgrade head
 
+      - name: Seed tracked assets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m scripts.seed_assets
+
       - name: Run news pipeline
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -37,4 +42,16 @@ jobs:
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           APP_TIMEZONE: America/New_York
+          OPENAI_MODEL: gpt-5-mini
+          NEWS_QUERY: financial OR stocks OR earnings
+          NEWS_LANGUAGE: en
+          HOURS_BACK: 48
+          NEWS_MAX_PAGES: 5
+          NEWS_SUPPLEMENT_TICKER_FETCH: "true"
+          MAX_LLM_ARTICLES_PER_DAY: 80
+          MAX_LLM_ARTICLES_PER_RUN: 80
+          KEYWORD_MIN_CONFIDENCE: "0.90"
+          MIN_ARTICLE_PRIORITY_SCORE: "0.90"
+          ARTICLE_MIN_ASCII_LETTER_RATIO: "0.85"
+          LLM_BODY_MAX_CHARS: 1000
         run: python -m scripts.run_pipeline
