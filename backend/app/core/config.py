@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve backend/.env from this file (app/core/config.py), not the process cwd.
@@ -20,11 +21,26 @@ class Settings(BaseSettings):
     def get_database_url(self) -> str:
         """Get database URL, either from DATABASE_URL or construct from components"""
         if self.DATABASE_URL:
-            return self.DATABASE_URL
+            return self.DATABASE_URL.strip()
         return (
             f"postgresql://{self.database_username}:{self.database_password}"
             f"@{self.database_hostname}:{self.database_port}/{self.database_name}"
         )
+
+    @field_validator(
+        "DATABASE_URL",
+        "OPENAI_API_KEY",
+        "NEWS_API_KEY",
+        "DISCORD_WEBHOOK_URL",
+        "NEWS_API_BASE_URL",
+        mode="before",
+    )
+    @classmethod
+    def strip_secret_strings(cls, value: object) -> object:
+        """GitHub/env secrets are often pasted with trailing newlines."""
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
     secret_key: str = "your-secret-key-change-in-production"
     algorithm: str = "HS256"

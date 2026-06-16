@@ -10,13 +10,18 @@ from app.models.alert import Alerts
 logger = logging.getLogger(__name__)
 
 
+def _is_valid_webhook_url(url: str) -> bool:
+    cleaned = url.strip()
+    return cleaned.startswith("https://") or cleaned.startswith("http://")
+
+
 def send_discord_alert_if_configured(alert: Alerts, db: Optional[Session] = None) -> None:
     """
-    POST a message to the configured Discord webhook. No-op if URL is unset.
+    POST a message to the configured Discord webhook. No-op if URL is unset or invalid.
     Failures are logged; they do not affect alert persistence.
     """
     url: Optional[str] = settings.DISCORD_WEBHOOK_URL
-    if not url or not str(url).strip():
+    if not url or not _is_valid_webhook_url(str(url)):
         logger.debug("Discord webhook not configured; skipping notification")
         return
 
