@@ -1,10 +1,20 @@
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.limiter import limiter
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi._rate_limit_exceeded_handler import _rate_limit_exceeded_handler
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
-app = FastAPI()
+from app.api.router import router as api_router
+from app.core.config import settings
+from app.core.database import get_db
+from app.core.limiter import limiter
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    description="Read-only API for financial sentiment data",
+    version="1.0.0",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -17,12 +27,17 @@ app.add_middleware(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+app.include_router(api_router)
+
+
 @app.get("/")
-@limiter.limit("10/minute")
+@limiter.limit("60/minute")
 def read_root(request: Request):
-    return {"app_name": "Financial Research Agent", "version": "1.0.0", "status": "running"}
+    return {"app_name": settings.APP_NAME, "version": "1.0.0", "status": "running"}
+
 
 @app.get("/health")
-@limiter.limit("10/minute")
-def health_check(request: Request):
-    return {"status": "ok"}
+@limiter.limit("60/minute")
+def health_check(request: Request, db: Session = Depends(get_db)):
+    db.execute(text("SELECT 1"))
+    return {"status": "ok", "database": "connected"}
