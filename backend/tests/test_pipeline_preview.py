@@ -72,7 +72,7 @@ class TestPipelinePreview:
                 "url": f"https://example.com/{index}",
                 "publishedAt": f"2026-06-07T{10 - index:02d}:00:00Z",
                 "source": {"name": "Reuters"},
-                "description": "NVDA update",
+                "description": "NVDA earnings beat revenue estimates",
             }
             for index in range(3)
         ]

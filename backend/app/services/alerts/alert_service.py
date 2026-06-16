@@ -110,6 +110,7 @@ class AlertService:
             ticker_id=ticker_id,
             trigger_reason=trigger_reason,
             sentiment_value=sentiment_value,
+            created_at=app_now(),
         )
         self.db.add(alert)
         self.db.commit()

@@ -1,7 +1,15 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from app.core.timezone_util import calendar_day_bounds, now, to_local_date
+from app.core.timezone_util import (
+    calendar_day_bounds,
+    format_newsapi_datetime,
+    now,
+    parse_external_datetime,
+    to_app_timezone,
+    to_local_date,
+    to_utc,
+)
 
 
 class TestTimezoneUtil:
@@ -23,3 +31,22 @@ class TestTimezoneUtil:
         current = now()
         assert current.tzinfo is not None
         assert str(current.tzinfo) in {"America/New_York", "EDT", "EST"}
+
+    def test_parse_external_datetime_converts_utc_to_eastern(self):
+        # 18:00 UTC = 14:00 EDT on same calendar day in summer
+        parsed = parse_external_datetime("2026-06-13T18:00:00Z")
+        assert parsed.hour == 14
+        assert parsed.tzinfo == ZoneInfo("America/New_York")
+
+    def test_to_app_timezone_from_utc(self):
+        utc = datetime(2026, 1, 15, 17, 0, tzinfo=ZoneInfo("UTC"))
+        eastern = to_app_timezone(utc)
+        assert eastern.hour == 12  # EST (UTC-5) in January
+
+    def test_format_newsapi_datetime_outputs_utc(self):
+        eastern = datetime(2026, 1, 15, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+        assert format_newsapi_datetime(eastern) == "2026-01-15T17:00:00"
+
+    def test_to_utc_from_eastern(self):
+        eastern = datetime(2026, 1, 15, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+        assert to_utc(eastern).hour == 17

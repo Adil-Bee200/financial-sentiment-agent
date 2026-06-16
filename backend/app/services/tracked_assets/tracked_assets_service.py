@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.core.timezone_util import now as app_now
 from app.models.tracked_assets import TrackedAssets
 
 
@@ -17,7 +18,12 @@ class TrackedAssetsService:
         existing = self.get_by_symbol(symbol)
         if existing:
             raise ValueError(f"Symbol already tracked: {symbol}")
-        asset = TrackedAssets(symbol=symbol, company_name=company_name, sector=sector)
+        asset = TrackedAssets(
+            symbol=symbol,
+            company_name=company_name,
+            sector=sector,
+            created_at=app_now(),
+        )
         self.db.add(asset)
         self.db.commit()
         self.db.refresh(asset)

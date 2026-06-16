@@ -38,10 +38,12 @@ class ArticleIngestionService:
         hours_back: int,
         as_of: datetime | None = None,
     ) -> tuple[str, str]:
-        """ISO datetimes for NewsAPI ``from`` / ``to`` params."""
+        """ISO datetimes (UTC) for NewsAPI ``from`` / ``to`` params."""
+        from app.core.timezone_util import format_newsapi_datetime, now as app_now
+
         as_of = as_of or app_now()
         start = as_of - timedelta(hours=hours_back)
-        return start.strftime("%Y-%m-%dT%H:%M:%S"), as_of.strftime("%Y-%m-%dT%H:%M:%S")
+        return format_newsapi_datetime(start), format_newsapi_datetime(as_of)
 
     def _rate_limit(self):
         elapsed = time.time() - self.last_request_time

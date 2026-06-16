@@ -1,14 +1,13 @@
 import logging
 import traceback
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, List, Set
 
-from dateutil import parser as date_parser
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.timezone_util import now as app_now
+from app.core.timezone_util import now as app_now, parse_external_datetime
 from app.models.article import ArticleEntities, Articles
 from app.models.processing_runs import ProcessingRuns
 from app.services.alerts.alert_service import AlertService
@@ -182,6 +181,7 @@ class PipelineService:
             articles_fetched=0,
             num_processed=0,
             status="running",
+            started_at=app_now(),
         )
         self.db.add(run)
         self.db.commit()
@@ -356,9 +356,4 @@ class PipelineService:
 
     @staticmethod
     def _parse_published_at(value: str | None) -> datetime:
-        if not value:
-            return app_now()
-        parsed = date_parser.isoparse(value)
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+        return parse_external_datetime(value)
