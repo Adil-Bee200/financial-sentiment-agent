@@ -12,6 +12,8 @@ import type {
   SentimentDaily,
   TrackedAsset,
 } from '../api/types'
+import { sortByDateAsc } from '../lib/chart'
+
 const LLM_COST_PER_ARTICLE = 0.00035
 
 function derivePipelineStatus(
@@ -51,6 +53,7 @@ export function useDashboard() {
   >({})
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
   const [articles, setArticles] = useState<Article[]>([])
+  const [sentimentHistory, setSentimentHistory] = useState<SentimentDaily[]>([])
   const [pipeline, setPipeline] = useState<PipelineStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -94,15 +97,25 @@ export function useDashboard() {
   useEffect(() => {
     if (!selectedSymbol) {
       setArticles([])
+      setSentimentHistory([])
       return
     }
     let cancelled = false
-    getArticles(selectedSymbol, 15)
-      .then((data) => {
-        if (!cancelled) setArticles(data)
+    Promise.all([
+      getArticles(selectedSymbol, 15),
+      getDailySentiment(selectedSymbol, 7),
+    ])
+      .then(([articleData, dailyData]) => {
+        if (!cancelled) {
+          setArticles(articleData)
+          setSentimentHistory(sortByDateAsc(dailyData))
+        }
       })
       .catch(() => {
-        if (!cancelled) setArticles([])
+        if (!cancelled) {
+          setArticles([])
+          setSentimentHistory([])
+        }
       })
     return () => {
       cancelled = true
@@ -121,6 +134,7 @@ export function useDashboard() {
     setSelectedSymbol,
     selectedAsset,
     selectedDaily,
+    sentimentHistory,
     articles,
     pipeline,
     loading,
