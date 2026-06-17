@@ -25,6 +25,7 @@ class ArticleResponse(BaseModel):
     symbol: str
     sentiment_score: Optional[float] = None
     confidence: float
+    relevance_score: Optional[float] = None
 
 
 class SentimentDailyResponse(BaseModel):

@@ -1,6 +1,5 @@
-from typing import Optional
-
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import nullslast
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -16,19 +15,28 @@ router = APIRouter(prefix="/articles", tags=["articles"])
 @limiter.limit("60/minute")
 def list_articles(
     request: Request,
-    symbol: Optional[str] = Query(default=None, description="Filter by ticker symbol"),
+    symbol: str = Query(..., min_length=1, description="Tracked ticker symbol (required)"),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    query = (
-        db.query(Articles, ArticleEntities, TrackedAssets)
-        .join(ArticleEntities, Articles.article_id == ArticleEntities.article_id)
-        .join(TrackedAssets, ArticleEntities.ticker_id == TrackedAssets.ticker_id)
-    )
-    if symbol:
-        query = query.filter(TrackedAssets.symbol == symbol.upper())
+    """Latest articles for one tracked ticker, newest first."""
+    normalized = symbol.strip().upper()
+    asset = db.query(TrackedAssets).filter(TrackedAssets.symbol == normalized).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"Tracked asset not found: {normalized}")
 
-    rows = query.order_by(Articles.published_at.desc()).limit(limit).all()
+    rows = (
+        db.query(Articles, ArticleEntities)
+        .join(ArticleEntities, Articles.article_id == ArticleEntities.article_id)
+        .filter(ArticleEntities.ticker_id == asset.ticker_id)
+        .order_by(
+            Articles.published_at.desc(),
+            nullslast(ArticleEntities.relevance_score.desc()),
+            ArticleEntities.confidence.desc(),
+        )
+        .limit(limit)
+        .all()
+    )
     return [
         ArticleResponse(
             article_id=article.article_id,
@@ -40,6 +48,7 @@ def list_articles(
             symbol=asset.symbol,
             sentiment_score=entity.sentiment_score,
             confidence=entity.confidence,
+            relevance_score=entity.relevance_score,
         )
-        for article, entity, asset in rows
+        for article, entity in rows
     ]

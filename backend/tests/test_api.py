@@ -60,6 +60,17 @@ class TestTrackedAssets:
 
 
 class TestArticles:
+    def test_list_articles_requires_symbol(self, client, mock_db):
+        response = client.get("/api/articles")
+        assert response.status_code == 422
+
+    def test_list_articles_unknown_symbol_returns_404(self, client, mock_db):
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+
+        response = client.get("/api/articles", params={"symbol": "FAKE"})
+
+        assert response.status_code == 404
+
     def test_list_articles_with_symbol_filter(self, client, mock_db):
         ticker_id = uuid.uuid4()
         article_id = uuid.uuid4()
@@ -77,11 +88,25 @@ class TestArticles:
             ticker_id=ticker_id,
             confidence=0.95,
             sentiment_score=0.8,
+            relevance_score=0.9,
         )
         asset = TrackedAssets(ticker_id=ticker_id, symbol="NVDA", created_at=published_at)
-        mock_db.query.return_value.join.return_value.join.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [
-            (article, entity, asset)
+
+        article_query = MagicMock()
+        article_query.join.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [
+            (article, entity)
         ]
+
+        def query_side_effect(*models):
+            if models and models[0] is TrackedAssets:
+                tracked_query = MagicMock()
+                tracked_query.filter.return_value.first.return_value = asset
+                return tracked_query
+            if models and models[0] is Articles:
+                return article_query
+            return MagicMock()
+
+        mock_db.query.side_effect = query_side_effect
 
         response = client.get("/api/articles", params={"symbol": "nvda", "limit": 5})
 
@@ -89,6 +114,7 @@ class TestArticles:
         data = response.json()
         assert data[0]["symbol"] == "NVDA"
         assert data[0]["sentiment_score"] == 0.8
+        assert data[0]["relevance_score"] == 0.9
 
 
 class TestSentiment:

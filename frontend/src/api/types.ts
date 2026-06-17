@@ -16,6 +16,7 @@ export interface Article {
   symbol: string
   sentiment_score: number | null
   confidence: number
+  relevance_score: number | null
 }
 
 export interface SentimentDaily {

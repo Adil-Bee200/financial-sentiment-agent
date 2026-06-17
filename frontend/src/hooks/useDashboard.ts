@@ -19,17 +19,14 @@ const LLM_COST_PER_ARTICLE = 0.00035
 function derivePipelineStatus(
   alerts: Alert[],
   dailyAll: SentimentDaily[],
-  articles: Article[],
 ): PipelineStatus {
   const today = dailyAll.filter((d) => d.date === dailyAll[0]?.date)
   const articlesAnalyzed = today.reduce((sum, d) => sum + d.article_count, 0)
 
   const alertTimes = alerts.map((a) => new Date(a.created_at).getTime())
-  const articleTimes = articles.map((a) => new Date(a.published_at).getTime())
-  const allTimes = [...alertTimes, ...articleTimes]
   const lastRun =
-    allTimes.length > 0
-      ? new Date(Math.max(...allTimes)).toISOString()
+    alertTimes.length > 0
+      ? new Date(Math.max(...alertTimes)).toISOString()
       : null
 
   const dayAgo = Date.now() - 86_400_000
@@ -62,11 +59,10 @@ export function useDashboard() {
     setLoading(true)
     setError(null)
     try {
-      const [assetList, dailyAll, alertList, recentArticles] = await Promise.all([
+      const [assetList, dailyAll, alertList] = await Promise.all([
         getTrackedAssets(),
         getDailySentiment(undefined, 30),
         getAlerts(100),
-        getArticles(undefined, 50),
       ])
 
       setAssets(assetList)
@@ -78,7 +74,7 @@ export function useDashboard() {
         return assetList[0]?.symbol ?? null
       })
 
-      setPipeline(derivePipelineStatus(alertList, dailyAll, recentArticles))
+      setPipeline(derivePipelineStatus(alertList, dailyAll))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard')
     } finally {

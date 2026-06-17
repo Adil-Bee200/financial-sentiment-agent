@@ -45,6 +45,7 @@ function ArticleCard({ article }: { article: Article }) {
   const [expanded, setExpanded] = useState(false)
   const summary = article.summary ?? ''
   const truncated = summary.length > 180 && !expanded
+  const relevance = article.relevance_score ?? article.confidence
 
   return (
     <Card className="p-4 transition-colors hover:border-white/[0.14]">
@@ -98,11 +99,11 @@ function ArticleCard({ article }: { article: Article }) {
         <div className="h-1.5 max-w-32 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
           <div
             className="h-full rounded-full bg-emerald-500/70"
-            style={{ width: `${Math.round(article.confidence * 100)}%` }}
+            style={{ width: `${Math.round(relevance * 100)}%` }}
           />
         </div>
         <span className="font-mono text-xs text-zinc-500">
-          {Math.round(article.confidence * 100)}%
+          {Math.round(relevance * 100)}%
         </span>
       </div>
     </Card>

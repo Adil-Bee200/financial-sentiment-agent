@@ -12,9 +12,8 @@ export function getTrackedAssets(): Promise<TrackedAsset[]> {
   return get('/api/tracked-assets')
 }
 
-export function getArticles(symbol?: string, limit = 20): Promise<Article[]> {
-  const params = new URLSearchParams({ limit: String(limit) })
-  if (symbol) params.set('symbol', symbol)
+export function getArticles(symbol: string, limit = 20): Promise<Article[]> {
+  const params = new URLSearchParams({ symbol, limit: String(limit) })
   return get(`/api/articles?${params}`)
 }
 
