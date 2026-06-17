@@ -1,94 +1,121 @@
-import type { ReactNode } from 'react'
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ReferenceLine,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import type { SentimentDaily } from '../api/types'
-import { formatChartDay } from '../lib/chart'
-import { Card, SectionTitle } from './ui'
+import { toChartPoints, type ChartPoint } from '../lib/chart'
+import { formatScore, getSentimentLabel } from '../lib/sentiment'
+import { ChartContainer } from './charts/ChartContainer'
+import { ChartTooltipBox, ChartTooltipRow } from './charts/ChartTooltip'
+import {
+  CHART_AXIS,
+  CHART_CURSOR,
+  CHART_GRID,
+  formatSentimentAxisTick,
+  SENTIMENT_CHART_MARGIN,
+  SENTIMENT_Y_TICKS,
+} from './charts/chartTheme'
+import { MetricCard } from './charts/MetricCard'
 
 interface SentimentTrendChartProps {
   data: SentimentDaily[]
 }
 
-const W = 260
-const H = 100
-const PAD = { top: 8, right: 8, bottom: 20, left: 28 }
-const PLOT_W = W - PAD.left - PAD.right
-const PLOT_H = H - PAD.top - PAD.bottom
+function SentimentTrendTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean
+  payload?: { payload: ChartPoint }[]
+}) {
+  if (!active || !payload?.length) return null
+  const row = payload[0].payload
+  return (
+    <ChartTooltipBox title={row.dateLabel}>
+      <ChartTooltipRow
+        label="Sentiment"
+        value={formatScore(row.avg_sentiment)}
+        valueClassName="text-emerald-400"
+      />
+      <ChartTooltipRow label="Label" value={getSentimentLabel(row.avg_sentiment)} />
+      <ChartTooltipRow label="Articles" value={String(row.article_count)} />
+      {row.momentum != null && (
+        <ChartTooltipRow label="Momentum" value={formatScore(row.momentum)} />
+      )}
+    </ChartTooltipBox>
+  )
+}
 
 export function SentimentTrendChart({ data }: SentimentTrendChartProps) {
-  if (data.length === 0) {
+  const points = toChartPoints(data)
+
+  if (points.length === 0) {
     return (
       <MetricCard title="7-Day Sentiment Trend">
-        <p className="py-8 text-center text-xs text-zinc-600">No trend data yet</p>
+        <p className="flex h-full items-center justify-center text-xs text-zinc-600">
+          No trend data yet
+        </p>
       </MetricCard>
     )
   }
 
-  const points = data.map((d, i) => {
-    const x = PAD.left + (data.length === 1 ? PLOT_W / 2 : (i / (data.length - 1)) * PLOT_W)
-    const y = PAD.top + PLOT_H - ((d.avg_sentiment + 1) / 2) * PLOT_H
-    return { x, y, ...d }
-  })
-
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${PAD.top + PLOT_H} L ${points[0].x} ${PAD.top + PLOT_H} Z`
-  const zeroY = PAD.top + PLOT_H / 2
-
   return (
     <MetricCard title="7-Day Sentiment Trend">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" aria-hidden>
-        <line
-          x1={PAD.left}
-          y1={zeroY}
-          x2={PAD.left + PLOT_W}
-          y2={zeroY}
-          stroke="rgba(255,255,255,0.08)"
-          strokeDasharray="3 3"
-        />
-        <path d={areaPath} fill="url(#trendFill)" opacity="0.4" />
-        <path
-          d={linePath}
-          fill="none"
-          stroke="#34d399"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {points.map((p) => (
-          <circle key={p.date} cx={p.x} cy={p.y} r="3" fill="#34d399" />
-        ))}
-        <defs>
-          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#34d399" stopOpacity="0.35" />
-            <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {points.map((p) => (
-          <text
-            key={`label-${p.date}`}
-            x={p.x}
-            y={H - 4}
-            textAnchor="middle"
-            fill="#71717a"
-            fontSize="8"
-          >
-            {formatChartDay(p.date)}
-          </text>
-        ))}
-      </svg>
+      <ChartContainer>
+        <AreaChart data={points} margin={SENTIMENT_CHART_MARGIN}>
+          <defs>
+            <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#34d399" stopOpacity={0.35} />
+              <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke={CHART_GRID}
+            vertical={false}
+          />
+          <XAxis
+            dataKey="day"
+            tick={CHART_AXIS}
+            axisLine={false}
+            tickLine={false}
+            tickMargin={6}
+          />
+          <YAxis
+            domain={[-1, 1]}
+            ticks={SENTIMENT_Y_TICKS}
+            tick={{ ...CHART_AXIS, textAnchor: 'end' }}
+            axisLine={false}
+            tickLine={false}
+            width={28}
+            tickMargin={4}
+            tickFormatter={formatSentimentAxisTick}
+          />
+          <ReferenceLine y={0} stroke={CHART_GRID} strokeDasharray="3 3" />
+          <Tooltip
+            content={<SentimentTrendTooltip />}
+            cursor={{ stroke: CHART_CURSOR, strokeWidth: 1 }}
+          />
+          <Area
+            type="monotone"
+            dataKey="avg_sentiment"
+            stroke="#34d399"
+            strokeWidth={2}
+            fill="url(#trendGradient)"
+            activeDot={{
+              r: 5,
+              fill: '#34d399',
+              stroke: '#111827',
+              strokeWidth: 2,
+            }}
+          />
+        </AreaChart>
+      </ChartContainer>
     </MetricCard>
-  )
-}
-
-function MetricCard({
-  title,
-  children,
-}: {
-  title: string
-  children: ReactNode
-}) {
-  return (
-    <Card className="flex flex-1 flex-col p-4">
-      <SectionTitle>{title}</SectionTitle>
-      <div className="mt-3 flex-1">{children}</div>
-    </Card>
   )
 }

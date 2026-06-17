@@ -67,13 +67,13 @@ export function SentimentGauge({ score, articleCount }: SentimentGaugeProps) {
           <circle cx={cx} cy={cy} r="6" fill="#e4e4e7" />
         </svg>
 
-        <div className="absolute bottom-8 left-3 text-[10px] font-medium text-red-400/80">
+        <div className="pointer-events-none absolute bottom-8 left-3 text-[10px] font-medium text-red-400/80">
           red
         </div>
-        <div className="absolute bottom-14 left-1/2 -translate-x-1/2 text-[10px] font-medium text-amber-400/80">
+        <div className="pointer-events-none absolute bottom-14 left-1/2 -translate-x-1/2 text-[10px] font-medium text-amber-400/80">
           yellow
         </div>
-        <div className="absolute bottom-8 right-3 text-[10px] font-medium text-emerald-400/80">
+        <div className="pointer-events-none absolute bottom-8 right-3 text-[10px] font-medium text-emerald-400/80">
           green
         </div>
       </div>

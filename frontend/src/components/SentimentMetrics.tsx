@@ -10,10 +10,15 @@ interface SentimentMetricsProps {
 
 export function SentimentMetrics({ history, momentum }: SentimentMetricsProps) {
   return (
-    <div className="mt-6 grid w-full grid-cols-1 gap-4 sm:grid-cols-3">
-      <SentimentTrendChart data={history} />
-      <ArticleVolumeChart data={history} />
-      <MomentumIndicator momentum={momentum} />
+    <div className="mt-6 flex w-full flex-col gap-4">
+      <div className="mx-auto w-full max-w-sm">
+        <MomentumIndicator momentum={momentum} />
+      </div>
+
+      <div className="grid w-full grid-cols-1 items-stretch gap-4 md:grid-cols-2">
+        <SentimentTrendChart data={history} />
+        <ArticleVolumeChart data={history} />
+      </div>
     </div>
   )
 }

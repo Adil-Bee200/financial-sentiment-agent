@@ -1,63 +1,86 @@
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import type { SentimentDaily } from '../api/types'
-import { formatChartDay } from '../lib/chart'
-import { Card, SectionTitle } from './ui'
+import { toChartPoints, type ChartPoint } from '../lib/chart'
+import { formatScore } from '../lib/sentiment'
+import { ChartContainer } from './charts/ChartContainer'
+import { ChartTooltipBox, ChartTooltipRow } from './charts/ChartTooltip'
+import { CHART_AXIS, CHART_CURSOR, CHART_GRID, CHART_MARGIN } from './charts/chartTheme'
+import { MetricCard } from './charts/MetricCard'
 
 interface ArticleVolumeChartProps {
   data: SentimentDaily[]
 }
 
-const W = 260
-const H = 100
-const PAD = { top: 8, right: 8, bottom: 20, left: 8 }
-const PLOT_W = W - PAD.left - PAD.right
-const PLOT_H = H - PAD.top - PAD.bottom
+function VolumeTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean
+  payload?: { payload: ChartPoint }[]
+}) {
+  if (!active || !payload?.length) return null
+  const row = payload[0].payload
+  return (
+    <ChartTooltipBox title={row.dateLabel}>
+      <ChartTooltipRow
+        label="Articles"
+        value={String(row.article_count)}
+        valueClassName="text-emerald-400"
+      />
+      <ChartTooltipRow
+        label="Avg sentiment"
+        value={formatScore(row.avg_sentiment)}
+      />
+    </ChartTooltipBox>
+  )
+}
 
 export function ArticleVolumeChart({ data }: ArticleVolumeChartProps) {
-  if (data.length === 0) {
+  const points = toChartPoints(data)
+
+  if (points.length === 0) {
     return (
-      <Card className="flex flex-1 flex-col p-4">
-        <SectionTitle>Article Volume</SectionTitle>
-        <p className="mt-3 py-8 text-center text-xs text-zinc-600">No volume data yet</p>
-      </Card>
+      <MetricCard title="Article Volume">
+        <p className="py-8 text-center text-xs text-zinc-600">No volume data yet</p>
+      </MetricCard>
     )
   }
 
-  const maxCount = Math.max(...data.map((d) => d.article_count), 1)
-  const barGap = 6
-  const barWidth = (PLOT_W - barGap * (data.length - 1)) / data.length
-
   return (
-    <Card className="flex flex-1 flex-col p-4">
-      <SectionTitle>Article Volume</SectionTitle>
-      <svg viewBox={`0 0 ${W} ${H}`} className="mt-3 w-full" aria-hidden>
-        {data.map((d, i) => {
-          const barH = (d.article_count / maxCount) * PLOT_H
-          const x = PAD.left + i * (barWidth + barGap)
-          const y = PAD.top + PLOT_H - barH
-          return (
-            <g key={d.date}>
-              <rect
-                x={x}
-                y={y}
-                width={barWidth}
-                height={barH}
-                rx="2"
-                fill="#34d399"
-                opacity={0.55 + (d.article_count / maxCount) * 0.45}
-              />
-              <text
-                x={x + barWidth / 2}
-                y={H - 4}
-                textAnchor="middle"
-                fill="#71717a"
-                fontSize="8"
-              >
-                {formatChartDay(d.date)}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
-    </Card>
+    <MetricCard title="Article Volume">
+      <ChartContainer>
+        <BarChart data={points} margin={CHART_MARGIN}>
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke={CHART_GRID}
+            vertical={false}
+          />
+          <XAxis
+            dataKey="day"
+            tick={CHART_AXIS}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis hide allowDecimals={false} />
+          <Tooltip
+            content={<VolumeTooltip />}
+            cursor={{ fill: CHART_CURSOR }}
+          />
+          <Bar
+            dataKey="article_count"
+            fill="#34d399"
+            radius={[3, 3, 0, 0]}
+            activeBar={{ fill: '#6ee7b7' }}
+          />
+        </BarChart>
+      </ChartContainer>
+    </MetricCard>
   )
 }

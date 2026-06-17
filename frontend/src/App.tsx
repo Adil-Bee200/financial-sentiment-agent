@@ -37,18 +37,22 @@ function App() {
 
       <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
         <div className="shrink-0 border-b border-white/[0.08] px-6 py-8">
-          <div className="mx-auto flex w-full max-w-4xl flex-col items-center text-center">
+          <div className="mx-auto flex w-full max-w-6xl flex-col items-center text-center">
             <AssetHeader asset={selectedAsset} centered />
-            <div className="mt-6 w-full">
+            <div className="mt-6 w-full max-w-2xl">
               <SentimentGauge
                 score={selectedDaily?.avg_sentiment ?? null}
                 articleCount={selectedDaily?.article_count ?? 0}
               />
             </div>
-            <SentimentMetrics
-              history={sentimentHistory}
-              momentum={sentimentHistory.at(-1)?.momentum ?? selectedDaily?.momentum}
-            />
+            <div className="w-full">
+              <SentimentMetrics
+                history={sentimentHistory}
+                momentum={
+                  sentimentHistory.at(-1)?.momentum ?? selectedDaily?.momentum
+                }
+              />
+            </div>
           </div>
         </div>
 
