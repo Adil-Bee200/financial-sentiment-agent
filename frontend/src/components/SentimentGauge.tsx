@@ -13,15 +13,66 @@ interface SentimentGaugeProps {
   asOfDate: string | null | undefined
 }
 
+const CX = 160
+const CY = 138
+const R = 120
+const STROKE = 18
+const GAP = 4
+
+const ZONES = [
+  { color: '#ef4444' },
+  { color: '#eab308' },
+  { color: '#22c55e' },
+] as const
+
+function polar(cx: number, cy: number, r: number, deg: number) {
+  const rad = (deg * Math.PI) / 180
+  return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) }
+}
+
+const OUTER_R = R + STROKE / 2
+const INNER_R = R - STROKE / 2
+
+/** Filled annular arc — flat radial ends match the bar segment shape exactly. */
+function barPath(
+  cx: number,
+  cy: number,
+  startDeg: number,
+  endDeg: number,
+) {
+  const outerStart = polar(cx, cy, OUTER_R, startDeg)
+  const outerEnd = polar(cx, cy, OUTER_R, endDeg)
+  const innerEnd = polar(cx, cy, INNER_R, endDeg)
+  const innerStart = polar(cx, cy, INNER_R, startDeg)
+  const sweep = startDeg > endDeg ? 1 : 0
+  return [
+    `M ${outerStart.x} ${outerStart.y}`,
+    `A ${OUTER_R} ${OUTER_R} 0 0 ${sweep} ${outerEnd.x} ${outerEnd.y}`,
+    `L ${innerEnd.x} ${innerEnd.y}`,
+    `A ${INNER_R} ${INNER_R} 0 0 ${1 - sweep} ${innerStart.x} ${innerStart.y}`,
+    'Z',
+  ].join(' ')
+}
+
+/** Three equal semicircle segments with small gaps between them. */
+function zoneAngles(index: number): { start: number; end: number } {
+  const segment = 180 / 3
+  const start = 180 - index * segment - (index > 0 ? GAP / 2 : 0)
+  const end = 180 - (index + 1) * segment + (index < 2 ? GAP / 2 : 0)
+  return { start, end }
+}
+
+/** How much of a zone (0–1) is filled based on overall gauge position (0–1). */
+function zoneFillFraction(zoneIndex: number, position: number): number {
+  const zoneStart = zoneIndex / 3
+  const zoneEnd = (zoneIndex + 1) / 3
+  if (position <= zoneStart) return 0
+  if (position >= zoneEnd) return 1
+  return (position - zoneStart) / (zoneEnd - zoneStart)
+}
+
 export function SentimentGauge({ score, articleCount, asOfDate }: SentimentGaugeProps) {
-  const position = score != null ? scoreToGaugePosition(score) : 0.5
-  const angle = 180 - position * 180
-  const rad = (angle * Math.PI) / 180
-  const cx = 160
-  const cy = 138
-  const needleLen = 95
-  const nx = cx + needleLen * Math.cos(rad)
-  const ny = cy - needleLen * Math.sin(rad)
+  const position = score != null ? scoreToGaugePosition(score) : 0
 
   return (
     <Card className="flex w-full flex-col items-center px-6 py-7">
@@ -29,55 +80,32 @@ export function SentimentGauge({ score, articleCount, asOfDate }: SentimentGauge
         Daily Sentiment Gauge
       </p>
 
-      <div className="relative w-full max-w-[380px]">
+      <div className="w-full max-w-[380px]">
         <svg viewBox="0 0 320 175" className="w-full" aria-hidden>
-          <defs>
-            <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#ef4444" />
-              <stop offset="50%" stopColor="#eab308" />
-              <stop offset="100%" stopColor="#22c55e" />
-            </linearGradient>
-          </defs>
+          {ZONES.map((zone, i) => {
+            const { start, end } = zoneAngles(i)
+            const fraction = score != null ? zoneFillFraction(i, position) : 0
+            const fillEnd = start - fraction * (start - end)
 
-          <path
-            d="M 40 138 A 120 120 0 0 1 280 138"
-            fill="none"
-            stroke="rgba(255,255,255,0.06)"
-            strokeWidth="18"
-            strokeLinecap="round"
-          />
-
-          <path
-            d="M 40 138 A 120 120 0 0 1 280 138"
-            fill="none"
-            stroke="url(#gaugeGradient)"
-            strokeWidth="18"
-            strokeLinecap="round"
-            opacity="0.85"
-          />
-
-          <line
-            x1={cx}
-            y1={cy}
-            x2={nx}
-            y2={ny}
-            stroke="#e4e4e7"
-            strokeWidth="3"
-            strokeLinecap="round"
-            style={{ transition: 'all 0.6s ease' }}
-          />
-          <circle cx={cx} cy={cy} r="6" fill="#e4e4e7" />
+            return (
+              <g key={i}>
+                <path
+                  d={barPath(CX, CY, start, end)}
+                  fill={zone.color}
+                  opacity={0.22}
+                />
+                {fraction > 0 && (
+                  <path
+                    d={barPath(CX, CY, start, fillEnd)}
+                    fill={zone.color}
+                    opacity={0.95}
+                    style={{ transition: 'd 0.6s ease' }}
+                  />
+                )}
+              </g>
+            )
+          })}
         </svg>
-
-        <div className="pointer-events-none absolute bottom-8 left-3 text-[10px] font-medium text-red-400/80">
-          red
-        </div>
-        <div className="pointer-events-none absolute bottom-14 left-1/2 -translate-x-1/2 text-[10px] font-medium text-amber-400/80">
-          yellow
-        </div>
-        <div className="pointer-events-none absolute bottom-8 right-3 text-[10px] font-medium text-emerald-400/80">
-          green
-        </div>
       </div>
 
       <div className="mt-2 text-center">
