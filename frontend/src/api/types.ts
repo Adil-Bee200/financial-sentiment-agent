@@ -37,9 +37,12 @@ export interface Alert {
 }
 
 export interface PipelineStatus {
-  lastRun: string | null
-  articlesFetched: number
-  articlesAnalyzed: number
-  estimatedLlmCost: number
-  alertsTriggered: number
+  run_id: string | null
+  status: 'completed' | 'running' | 'error' | 'no_runs' | string
+  last_run: string | null
+  started_at: string | null
+  articles_fetched: number
+  articles_analyzed: number
+  estimated_llm_cost: number
+  alerts_triggered: number
 }

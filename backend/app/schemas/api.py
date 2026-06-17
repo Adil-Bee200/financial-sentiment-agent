@@ -43,3 +43,14 @@ class AlertResponse(BaseModel):
     trigger_reason: str
     sentiment_value: float
     created_at: datetime
+
+
+class PipelineStatusResponse(BaseModel):
+    run_id: Optional[UUID] = None
+    status: str
+    last_run: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    articles_fetched: int = 0
+    articles_analyzed: int = 0
+    estimated_llm_cost: float = 0.0
+    alerts_triggered: int = 0

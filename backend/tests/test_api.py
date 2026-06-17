@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.main import app
 from app.models.alert import Alerts
 from app.models.article import ArticleEntities, Articles
+from app.models.processing_runs import ProcessingRuns
 from app.models.sentiment import SentimentDaily
 from app.models.tracked_assets import TrackedAssets
 
@@ -169,3 +170,53 @@ class TestAlerts:
         data = response.json()
         assert data[0]["symbol"] == "TSLA"
         assert data[0]["trigger_reason"] == "Negative sentiment spike"
+
+
+class TestPipeline:
+    def test_pipeline_status_no_runs(self, client, mock_db):
+        mock_db.query.return_value.order_by.return_value.first.return_value = None
+
+        response = client.get("/api/pipeline/status")
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "no_runs"
+
+    def test_pipeline_status_latest_run(self, client, mock_db):
+        run_id = uuid.uuid4()
+        started = datetime(2026, 6, 16, 21, 0, tzinfo=timezone.utc)
+        finished = datetime(2026, 6, 16, 21, 5, tzinfo=timezone.utc)
+        run = ProcessingRuns(
+            run_id=run_id,
+            started_at=started,
+            finished_at=finished,
+            articles_fetched=120,
+            num_processed=18,
+            status="completed",
+        )
+
+        run_query = MagicMock()
+        run_query.order_by.return_value.first.return_value = run
+
+        alerts_query = MagicMock()
+        alerts_filtered = MagicMock()
+        alerts_filtered.filter.return_value.count.return_value = 2
+        alerts_query.filter.return_value = alerts_filtered
+
+        def query_side_effect(model):
+            if model is ProcessingRuns:
+                return run_query
+            if model is Alerts:
+                return alerts_query
+            return MagicMock()
+
+        mock_db.query.side_effect = query_side_effect
+
+        response = client.get("/api/pipeline/status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "completed"
+        assert data["articles_fetched"] == 120
+        assert data["articles_analyzed"] == 18
+        assert data["alerts_triggered"] == 2
+        assert data["estimated_llm_cost"] == 0.05

@@ -1,47 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  getAlerts,
   getArticles,
   getDailySentiment,
+  getPipelineStatus,
   getTrackedAssets,
 } from '../api/client'
 import type {
-  Alert,
   Article,
   PipelineStatus,
   SentimentDaily,
   TrackedAsset,
 } from '../api/types'
 import { latestDailyBySymbol, mergeDailyBySymbol, sortByDateAsc } from '../lib/chart'
-
-const LLM_COST_PER_ARTICLE = 0.00035
-
-function derivePipelineStatus(
-  alerts: Alert[],
-  dailyAll: SentimentDaily[],
-): PipelineStatus {
-  const today = dailyAll.filter((d) => d.date === dailyAll[0]?.date)
-  const articlesAnalyzed = today.reduce((sum, d) => sum + d.article_count, 0)
-
-  const alertTimes = alerts.map((a) => new Date(a.created_at).getTime())
-  const lastRun =
-    alertTimes.length > 0
-      ? new Date(Math.max(...alertTimes)).toISOString()
-      : null
-
-  const dayAgo = Date.now() - 86_400_000
-  const recentAlerts = alerts.filter(
-    (a) => new Date(a.created_at).getTime() > dayAgo,
-  )
-
-  return {
-    lastRun,
-    articlesFetched: Math.round(articlesAnalyzed * 1.4),
-    articlesAnalyzed,
-    estimatedLlmCost: articlesAnalyzed * LLM_COST_PER_ARTICLE,
-    alertsTriggered: recentAlerts.length,
-  }
-}
 
 export function useDashboard() {
   const [assets, setAssets] = useState<TrackedAsset[]>([])
@@ -59,22 +29,20 @@ export function useDashboard() {
     setLoading(true)
     setError(null)
     try {
-      const [assetList, dailyAll, alertList] = await Promise.all([
+      const [assetList, dailyAll, pipelineStatus] = await Promise.all([
         getTrackedAssets(),
         getDailySentiment(undefined, 30),
-        getAlerts(100),
+        getPipelineStatus(),
       ])
 
       setAssets(assetList)
-
       setDailyBySymbol(latestDailyBySymbol(dailyAll))
+      setPipeline(pipelineStatus)
 
       setSelectedSymbol((prev) => {
         if (prev && assetList.some((a) => a.symbol === prev)) return prev
         return assetList[0]?.symbol ?? null
       })
-
-      setPipeline(derivePipelineStatus(alertList, dailyAll))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard')
     } finally {

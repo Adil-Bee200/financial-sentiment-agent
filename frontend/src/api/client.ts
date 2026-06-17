@@ -1,4 +1,4 @@
-import type { Alert, Article, SentimentDaily, TrackedAsset } from './types'
+import type { Alert, Article, PipelineStatus, SentimentDaily, TrackedAsset } from './types'
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
@@ -28,4 +28,8 @@ export function getDailySentiment(
 
 export function getAlerts(limit = 100): Promise<Alert[]> {
   return get(`/api/alerts?limit=${limit}`)
+}
+
+export function getPipelineStatus(): Promise<PipelineStatus> {
+  return get('/api/pipeline/status')
 }

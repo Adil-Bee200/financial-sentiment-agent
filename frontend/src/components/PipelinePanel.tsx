@@ -13,14 +13,16 @@ function StatRow({
 }: {
   label: string
   value: string
-  accent?: 'green' | 'red' | 'neutral'
+  accent?: 'green' | 'red' | 'amber' | 'neutral'
 }) {
   const valueColor =
     accent === 'green'
       ? 'text-emerald-400'
       : accent === 'red'
         ? 'text-red-400'
-        : 'text-zinc-200'
+        : accent === 'amber'
+          ? 'text-amber-400'
+          : 'text-zinc-200'
 
   return (
     <div className="flex items-center justify-between py-2.5">
@@ -30,6 +32,36 @@ function StatRow({
       </span>
     </div>
   )
+}
+
+function formatRunStatus(status: PipelineStatus['status']): string {
+  switch (status) {
+    case 'completed':
+      return 'Completed'
+    case 'running':
+      return 'Running'
+    case 'error':
+      return 'Error'
+    case 'no_runs':
+      return 'No runs yet'
+    default:
+      return status
+  }
+}
+
+function statusAccent(
+  status: PipelineStatus['status'],
+): 'green' | 'red' | 'amber' | 'neutral' {
+  switch (status) {
+    case 'completed':
+      return 'green'
+    case 'running':
+      return 'amber'
+    case 'error':
+      return 'red'
+    default:
+      return 'neutral'
+  }
 }
 
 export function PipelinePanel({ status }: PipelinePanelProps) {
@@ -48,34 +80,41 @@ export function PipelinePanel({ status }: PipelinePanelProps) {
         ) : (
           <Card className="divide-y divide-white/[0.06] px-4">
             <StatRow
+              label="Run status"
+              value={formatRunStatus(status.status)}
+              accent={statusAccent(status.status)}
+            />
+            <StatRow
               label="Last run"
-              value={formatDateTime(status.lastRun)}
+              value={formatDateTime(status.last_run)}
             />
             <StatRow
               label="Articles fetched"
-              value={status.articlesFetched.toLocaleString()}
+              value={status.articles_fetched.toLocaleString()}
             />
             <StatRow
               label="Articles analyzed"
-              value={status.articlesAnalyzed.toLocaleString()}
+              value={status.articles_analyzed.toLocaleString()}
               accent="green"
             />
             <StatRow
               label="Est. LLM cost"
-              value={formatCurrency(status.estimatedLlmCost)}
+              value={formatCurrency(status.estimated_llm_cost)}
             />
             <StatRow
               label="Alerts triggered"
-              value={String(status.alertsTriggered)}
-              accent={status.alertsTriggered > 0 ? 'red' : 'neutral'}
+              value={String(status.alerts_triggered)}
+              accent={status.alerts_triggered > 0 ? 'red' : 'neutral'}
             />
           </Card>
         )}
 
-        <p className="mt-4 px-1 text-[10px] leading-relaxed text-zinc-600">
-          Pipeline metrics are estimated from daily sentiment rollups and recent
-          alerts. A dedicated status endpoint is not yet available.
-        </p>
+        {status?.status === 'no_runs' && (
+          <p className="mt-4 px-1 text-[10px] leading-relaxed text-zinc-600">
+            No pipeline runs recorded yet. Metrics will appear after the first
+            cron execution.
+          </p>
+        )}
       </div>
     </aside>
   )
