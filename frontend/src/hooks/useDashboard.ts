@@ -12,7 +12,7 @@ import type {
   SentimentDaily,
   TrackedAsset,
 } from '../api/types'
-import { sortByDateAsc } from '../lib/chart'
+import { latestDailyBySymbol, mergeDailyBySymbol, sortByDateAsc } from '../lib/chart'
 
 const LLM_COST_PER_ARTICLE = 0.00035
 
@@ -64,18 +64,14 @@ export function useDashboard() {
     try {
       const [assetList, dailyAll, alertList, recentArticles] = await Promise.all([
         getTrackedAssets(),
-        getDailySentiment(undefined, 2),
+        getDailySentiment(undefined, 30),
         getAlerts(100),
         getArticles(undefined, 50),
       ])
 
       setAssets(assetList)
 
-      const bySymbol: Record<string, SentimentDaily> = {}
-      for (const row of dailyAll) {
-        if (!bySymbol[row.symbol]) bySymbol[row.symbol] = row
-      }
-      setDailyBySymbol(bySymbol)
+      setDailyBySymbol(latestDailyBySymbol(dailyAll))
 
       setSelectedSymbol((prev) => {
         if (prev && assetList.some((a) => a.symbol === prev)) return prev
@@ -109,6 +105,7 @@ export function useDashboard() {
         if (!cancelled) {
           setArticles(articleData)
           setSentimentHistory(sortByDateAsc(dailyData))
+          setDailyBySymbol((prev) => mergeDailyBySymbol(prev, dailyData))
         }
       })
       .catch(() => {
@@ -123,9 +120,9 @@ export function useDashboard() {
   }, [selectedSymbol])
 
   const selectedAsset = assets.find((a) => a.symbol === selectedSymbol) ?? null
-  const selectedDaily = selectedSymbol
-    ? dailyBySymbol[selectedSymbol]
-    : undefined
+  const selectedDaily =
+    (selectedSymbol ? dailyBySymbol[selectedSymbol] : undefined) ??
+    sentimentHistory.at(-1)
 
   return {
     assets,

@@ -17,7 +17,7 @@ export function ArticleList({ articles, symbol }: ArticleListProps) {
   return (
     <div>
       <SectionTitle>
-        Top relevant recent articles{symbol ? ` — ${symbol}` : ''}
+        Top relevant recent articles{symbol ? ` for ${symbol}` : ''}
       </SectionTitle>
 
       {articles.length === 0 ? (
