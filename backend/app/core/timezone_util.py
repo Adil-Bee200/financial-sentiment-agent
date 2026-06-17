@@ -80,6 +80,32 @@ def calendar_day_bounds(value: datetime | date | None = None) -> tuple[datetime,
     return start, start + timedelta(days=1)
 
 
+def is_today_local(d: date) -> bool:
+    """Whether ``d`` is the current calendar date in the application timezone."""
+    return d == now().date()
+
+
+def format_analysis_date_label(d: date) -> str:
+    """Display label for an analysis calendar day, e.g. ``Wed, Jun 17``."""
+    dt = datetime.combine(d, datetime.min.time(), tzinfo=app_tz())
+    return f"{dt.strftime('%a, %b')} {d.day}"
+
+
+def format_chart_axis_label(d: date) -> str:
+    """Short weekday for chart axes, e.g. ``Wed``."""
+    dt = datetime.combine(d, datetime.min.time(), tzinfo=app_tz())
+    return dt.strftime("%a")
+
+
+def format_display_datetime_et(value: datetime) -> str:
+    """Full ET display for article cards, e.g. ``Jun 16, 5:48 PM ET``."""
+    local = to_app_timezone(value)
+    hour = local.strftime("%I").lstrip("0") or "12"
+    minute = local.strftime("%M")
+    ampm = local.strftime("%p")
+    return f"{local.strftime('%b')} {local.day}, {hour}:{minute} {ampm} ET"
+
+
 def start_of_local_day(value: datetime) -> datetime:
     """Midnight at the start of the local calendar day containing ``value``."""
     start, _ = calendar_day_bounds(value)

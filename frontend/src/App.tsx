@@ -42,11 +42,7 @@ function App() {
           <div className="mx-auto flex w-full max-w-6xl flex-col items-center text-center">
             <AssetHeader asset={selectedAsset} centered />
             <div className="mt-6 w-full max-w-2xl">
-              <SentimentGauge
-                score={selectedDaily?.avg_sentiment ?? null}
-                articleCount={selectedDaily?.article_count ?? 0}
-                asOfDate={selectedDaily?.date}
-              />
+              <SentimentGauge daily={selectedDaily} />
             </div>
             <div className="w-full">
               <SentimentMetrics

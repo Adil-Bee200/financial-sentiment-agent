@@ -277,7 +277,7 @@ class PipelineService:
                 )
                 self.db.add(entity)
                 symbols_touched.add(match.symbol)
-                aggregation_dates.setdefault(match.symbol, set()).add(published_at)
+                aggregation_dates.setdefault(match.symbol, set()).add(processed_at)
 
             self.db.commit()
             processed += 1
@@ -291,8 +291,10 @@ class PipelineService:
 
         symbols_aggregated: List[str] = []
         for symbol in sorted(symbols_touched):
-            for published_at in aggregation_dates.get(symbol, {now}):
-                self.sentiment.aggregate_sentiment_for_ticker(symbol, published_at)
+            days = aggregation_dates.get(symbol, set())
+            days.add(now)
+            for day in days:
+                self.sentiment.aggregate_sentiment_for_ticker(symbol, day)
             symbols_aggregated.append(symbol)
 
         alerts_created = self.alerts.evaluate_all_tracked(tracked, now)

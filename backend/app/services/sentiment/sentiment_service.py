@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Optional, Tuple
 from uuid import UUID
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.timezone_util import app_tz, calendar_day_bounds, start_of_local_day, to_local_date
@@ -28,8 +29,27 @@ class SentimentService:
         return to_local_date(value)
 
     def _day_bounds(self, value: datetime | date) -> Tuple[datetime, datetime]:
-        """Application timezone calendar day [start, end) for filtering article published_at."""
+        """Application timezone calendar day [start, end) for daily rollups."""
         return calendar_day_bounds(value)
+
+    def _entity_in_local_day(self, day_start: datetime, day_end: datetime):
+        """
+        Match entities analyzed on this ET calendar day (processed_at).
+
+        Legacy rows with null processed_at fall back to article published_at.
+        """
+        return or_(
+            and_(
+                ArticleEntities.processed_at.isnot(None),
+                ArticleEntities.processed_at >= day_start,
+                ArticleEntities.processed_at < day_end,
+            ),
+            and_(
+                ArticleEntities.processed_at.is_(None),
+                Articles.published_at >= day_start,
+                Articles.published_at < day_end,
+            ),
+        )
 
     def _entities_for_symbol_on_date(self, symbol: str, value: datetime | date) -> List[ArticleEntities]:
         day_start, day_end = self._day_bounds(value)
@@ -38,8 +58,7 @@ class SentimentService:
             .join(Articles, ArticleEntities.article_id == Articles.article_id)
             .join(TrackedAssets, ArticleEntities.ticker_id == TrackedAssets.ticker_id)
             .filter(TrackedAssets.symbol == symbol.strip().upper())
-            .filter(Articles.published_at >= day_start)
-            .filter(Articles.published_at < day_end)
+            .filter(self._entity_in_local_day(day_start, day_end))
             .all()
         )
 
@@ -49,12 +68,44 @@ class SentimentService:
             self.db.query(TrackedAssets.symbol)
             .join(ArticleEntities, ArticleEntities.ticker_id == TrackedAssets.ticker_id)
             .join(Articles, ArticleEntities.article_id == Articles.article_id)
-            .filter(Articles.published_at >= day_start)
-            .filter(Articles.published_at < day_end)
+            .filter(self._entity_in_local_day(day_start, day_end))
             .distinct()
             .all()
         )
         return [row[0] for row in rows]
+
+    def get_last_analyzed_at_map(
+        self, pairs: list[tuple[str, date]]
+    ) -> dict[tuple[str, date], datetime | None]:
+        """Latest ``processed_at`` per (symbol, analysis_date) for API responses."""
+        wanted = set(pairs)
+        result: dict[tuple[str, date], datetime | None] = {pair: None for pair in pairs}
+        if not wanted:
+            return result
+
+        symbols = {symbol for symbol, _ in pairs}
+        min_day = min(day for _, day in pairs)
+        max_day = max(day for _, day in pairs)
+        range_start, _ = calendar_day_bounds(min_day)
+        _, range_end = calendar_day_bounds(max_day)
+
+        rows = (
+            self.db.query(TrackedAssets.symbol, ArticleEntities.processed_at)
+            .join(TrackedAssets, ArticleEntities.ticker_id == TrackedAssets.ticker_id)
+            .filter(TrackedAssets.symbol.in_(symbols))
+            .filter(ArticleEntities.processed_at.isnot(None))
+            .filter(ArticleEntities.processed_at >= range_start)
+            .filter(ArticleEntities.processed_at < range_end)
+            .all()
+        )
+        for symbol, processed_at in rows:
+            key = (symbol, to_local_date(processed_at))
+            if key not in wanted:
+                continue
+            current = result[key]
+            if current is None or processed_at > current:
+                result[key] = processed_at
+        return result
 
     def create_sentiment_for_ticker(
         self,

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.limiter import limiter
+from app.core.config import settings
 from app.models.alert import Alerts
 from app.models.processing_runs import ProcessingRuns
 from app.schemas.api import PipelineStatusResponse
@@ -33,8 +34,9 @@ def get_pipeline_status(request: Request, db: Session = Depends(get_db)):
     return PipelineStatusResponse(
         run_id=run.run_id,
         status=run.status,
-        last_run=window_end or run.started_at,
+        last_run_at=window_end or run.started_at,
         started_at=run.started_at,
+        timezone=settings.APP_TIMEZONE,
         articles_fetched=run.articles_fetched,
         articles_analyzed=run.num_processed,
         estimated_llm_cost=_OBSERVED_LLM_COST_PER_RUN,

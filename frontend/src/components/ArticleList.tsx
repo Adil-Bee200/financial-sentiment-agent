@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import type { Article } from '../api/types'
-import { formatRelativeTime } from '../lib/format'
 import {
   formatScore,
   getSentimentBg,
@@ -61,7 +60,12 @@ function ArticleCard({ article }: { article: Article }) {
           </a>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
             {article.source && <span>{article.source}</span>}
-            <span>{formatRelativeTime(article.published_at)}</span>
+            {article.published_at_label && (
+              <span>Published {article.published_at_label}</span>
+            )}
+            {article.analyzed_at_label && (
+              <span>Analyzed {article.analyzed_at_label}</span>
+            )}
           </div>
         </div>
 

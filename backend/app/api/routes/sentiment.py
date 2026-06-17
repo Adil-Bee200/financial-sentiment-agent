@@ -5,11 +5,13 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.api.sentiment_daily import build_sentiment_daily_response
 from app.core.limiter import limiter
 from app.core.timezone_util import now
 from app.models.sentiment import SentimentDaily
 from app.models.tracked_assets import TrackedAssets
 from app.schemas.api import SentimentDailyResponse
+from app.services.sentiment.sentiment_service import SentimentService
 
 router = APIRouter(prefix="/sentiment", tags=["sentiment"])
 
@@ -32,14 +34,16 @@ def list_daily_sentiment(
         query = query.filter(TrackedAssets.symbol == symbol.upper())
 
     rows = query.order_by(SentimentDaily.date.desc(), TrackedAssets.symbol).all()
+    sentiment = SentimentService(db)
+    last_at = sentiment.get_last_analyzed_at_map(
+        [(asset.symbol, row.date) for row, asset in rows]
+    )
+
     return [
-        SentimentDailyResponse(
-            symbol=asset.symbol,
-            date=row.date,
-            avg_sentiment=row.avg_sentiment,
-            article_count=row.article_count,
-            momentum=row.momentum,
-            std_div=row.std_div,
+        build_sentiment_daily_response(
+            asset.symbol,
+            row,
+            last_run_at=last_at.get((asset.symbol, row.date)),
         )
         for row, asset in rows
     ]

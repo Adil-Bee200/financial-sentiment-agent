@@ -105,7 +105,7 @@ export function PipelinePanel({ status, health, alerts }: PipelinePanelProps) {
             />
             <StatRow
               label="Last run"
-              value={formatDateTime(status.last_run)}
+              value={formatDateTime(status.last_run_at)}
             />
             <StatRow
               label="Articles fetched"

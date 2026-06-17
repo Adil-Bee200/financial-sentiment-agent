@@ -30,7 +30,7 @@ function VolumeTooltip({
   return (
     <ChartTooltipBox title={row.dateLabel}>
       <ChartTooltipRow
-        label="Articles"
+        label="Articles analyzed"
         value={String(row.article_count)}
         valueClassName="text-emerald-400"
       />
@@ -47,14 +47,14 @@ export function ArticleVolumeChart({ data }: ArticleVolumeChartProps) {
 
   if (points.length === 0) {
     return (
-      <MetricCard title="Article Volume">
+      <MetricCard title="Articles Analyzed per Day">
         <p className="py-8 text-center text-xs text-zinc-600">No volume data yet</p>
       </MetricCard>
     )
   }
 
   return (
-    <MetricCard title="Article Volume">
+    <MetricCard title="Articles Analyzed per Day">
       <ChartContainer>
         <BarChart data={points} margin={CHART_MARGIN}>
           <CartesianGrid

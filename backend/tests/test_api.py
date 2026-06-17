@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, datetime, timezone
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -90,6 +90,7 @@ class TestArticles:
             confidence=0.95,
             sentiment_score=0.8,
             relevance_score=0.9,
+            processed_at=published_at,
         )
         asset = TrackedAssets(ticker_id=ticker_id, symbol="NVDA", created_at=published_at)
 
@@ -116,6 +117,8 @@ class TestArticles:
         assert data[0]["symbol"] == "NVDA"
         assert data[0]["sentiment_score"] == 0.8
         assert data[0]["relevance_score"] == 0.9
+        assert data[0]["analyzed_at"] is not None
+        assert data[0]["published_at_label"] is not None
 
 
 class TestSentiment:
@@ -139,12 +142,25 @@ class TestSentiment:
             (row, asset)
         ]
 
-        response = client.get("/api/sentiment/daily", params={"symbol": "AAPL", "days": 7})
+        sentiment_service = MagicMock()
+        sentiment_service.get_last_analyzed_at_map.return_value = {
+            ("AAPL", date(2026, 6, 12)): datetime(2026, 6, 12, 18, 0, tzinfo=timezone.utc),
+        }
+
+        with patch(
+            "app.api.routes.sentiment.SentimentService",
+            return_value=sentiment_service,
+        ):
+            response = client.get("/api/sentiment/daily", params={"symbol": "AAPL", "days": 7})
 
         assert response.status_code == 200
         data = response.json()
         assert data[0]["symbol"] == "AAPL"
         assert data[0]["avg_sentiment"] == 0.25
+        assert data[0]["analysis_date"] == "2026-06-12"
+        assert data[0]["timezone"] == "America/New_York"
+        assert data[0]["analysis_date_label"]
+        assert data[0]["chart_axis_label"]
 
 
 class TestAlerts:

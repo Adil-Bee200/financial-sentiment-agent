@@ -1,4 +1,4 @@
-import { formatCalendarDate } from '../lib/format'
+import type { SentimentDaily } from '../api/types'
 import {
   formatScore,
   getSentimentColor,
@@ -8,9 +8,7 @@ import {
 import { Card } from './ui'
 
 interface SentimentGaugeProps {
-  score: number | null
-  articleCount: number
-  asOfDate: string | null | undefined
+  daily: SentimentDaily | null | undefined
 }
 
 const CX = 160
@@ -33,7 +31,6 @@ function polar(cx: number, cy: number, r: number, deg: number) {
 const OUTER_R = R + STROKE / 2
 const INNER_R = R - STROKE / 2
 
-/** Filled annular arc — flat radial ends match the bar segment shape exactly. */
 function barPath(
   cx: number,
   cy: number,
@@ -54,7 +51,6 @@ function barPath(
   ].join(' ')
 }
 
-/** Three equal semicircle segments with small gaps between them. */
 function zoneAngles(index: number): { start: number; end: number } {
   const segment = 180 / 3
   const start = 180 - index * segment - (index > 0 ? GAP / 2 : 0)
@@ -62,7 +58,6 @@ function zoneAngles(index: number): { start: number; end: number } {
   return { start, end }
 }
 
-/** How much of a zone (0–1) is filled based on overall gauge position (0–1). */
 function zoneFillFraction(zoneIndex: number, position: number): number {
   const zoneStart = zoneIndex / 3
   const zoneEnd = (zoneIndex + 1) / 3
@@ -71,14 +66,26 @@ function zoneFillFraction(zoneIndex: number, position: number): number {
   return (position - zoneStart) / (zoneEnd - zoneStart)
 }
 
-export function SentimentGauge({ score, articleCount, asOfDate }: SentimentGaugeProps) {
+export function SentimentGauge({ daily }: SentimentGaugeProps) {
+  const score = daily?.avg_sentiment ?? null
   const position = score != null ? scoreToGaugePosition(score) : 0
+
+  const articleCountPhrase = daily
+    ? daily.is_current_analysis_day
+      ? `Based on ${daily.article_count} article${daily.article_count !== 1 ? 's' : ''} analyzed today`
+      : `Based on ${daily.article_count} article${daily.article_count !== 1 ? 's' : ''} analyzed that day`
+    : null
 
   return (
     <Card className="flex w-full flex-col items-center px-6 py-7">
-      <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-        Daily Sentiment Gauge
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+        Daily Sentiment
       </p>
+      {daily && (
+        <p className="mb-4 text-sm text-zinc-400">
+          For {daily.analysis_date_label} {daily.timezone === 'America/New_York' ? 'ET' : daily.timezone}
+        </p>
+      )}
 
       <div className="w-full max-w-[380px]">
         <svg viewBox="0 0 320 175" className="w-full" aria-hidden>
@@ -117,14 +124,9 @@ export function SentimentGauge({ score, articleCount, asOfDate }: SentimentGauge
         <p className="mt-1 text-lg font-medium text-zinc-300">
           {getSentimentLabel(score)}
         </p>
-        <p className="mt-2 text-sm text-zinc-500">
-          Based on {articleCount} article{articleCount !== 1 ? 's' : ''}
-          {asOfDate && (
-            <span className="block text-xs text-zinc-600">
-              As of {formatCalendarDate(asOfDate)} ET
-            </span>
-          )}
-        </p>
+        {articleCountPhrase && (
+          <p className="mt-2 text-sm text-zinc-500">{articleCountPhrase}</p>
+        )}
       </div>
     </Card>
   )

@@ -43,7 +43,7 @@ function SentimentTrendTooltip({
         valueClassName="text-emerald-400"
       />
       <ChartTooltipRow label="Label" value={getSentimentLabel(row.avg_sentiment)} />
-      <ChartTooltipRow label="Articles" value={String(row.article_count)} />
+      <ChartTooltipRow label="Articles analyzed" value={String(row.article_count)} />
       {row.momentum != null && (
         <ChartTooltipRow label="Momentum" value={formatScore(row.momentum)} />
       )}
@@ -62,7 +62,7 @@ export function SentimentTrendChart({ data }: SentimentTrendChartProps) {
 
   if (points.length === 0) {
     return (
-      <MetricCard title="7-Day Sentiment Trend">
+      <MetricCard title="7-Day Sentiment Trend (analysis day)">
         <p className="flex h-full items-center justify-center text-xs text-zinc-600">
           No trend data yet
         </p>
@@ -71,7 +71,7 @@ export function SentimentTrendChart({ data }: SentimentTrendChartProps) {
   }
 
   return (
-    <MetricCard title="7-Day Sentiment Trend">
+    <MetricCard title="7-Day Sentiment Trend (analysis day)">
       <ChartContainer>
         <AreaChart data={points} margin={SENTIMENT_CHART_MARGIN}>
           <defs>

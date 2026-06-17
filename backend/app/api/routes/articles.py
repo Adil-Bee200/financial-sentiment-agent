@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.limiter import limiter
+from app.core.timezone_util import format_display_datetime_et
 from app.models.article import ArticleEntities, Articles
 from app.models.tracked_assets import TrackedAssets
 from app.schemas.api import ArticleResponse
@@ -44,6 +45,13 @@ def list_articles(
             source=article.source,
             url=article.url,
             published_at=article.published_at,
+            analyzed_at=entity.processed_at,
+            published_at_label=format_display_datetime_et(article.published_at),
+            analyzed_at_label=(
+                format_display_datetime_et(entity.processed_at)
+                if entity.processed_at is not None
+                else None
+            ),
             summary=article.summary,
             symbol=asset.symbol,
             sentiment_score=entity.sentiment_score,
