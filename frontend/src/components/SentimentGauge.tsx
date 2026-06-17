@@ -1,3 +1,4 @@
+import { formatCalendarDate } from '../lib/format'
 import {
   formatScore,
   getSentimentColor,
@@ -9,9 +10,10 @@ import { Card } from './ui'
 interface SentimentGaugeProps {
   score: number | null
   articleCount: number
+  asOfDate: string | null | undefined
 }
 
-export function SentimentGauge({ score, articleCount }: SentimentGaugeProps) {
+export function SentimentGauge({ score, articleCount, asOfDate }: SentimentGaugeProps) {
   const position = score != null ? scoreToGaugePosition(score) : 0.5
   const angle = 180 - position * 180
   const rad = (angle * Math.PI) / 180
@@ -89,6 +91,11 @@ export function SentimentGauge({ score, articleCount }: SentimentGaugeProps) {
         </p>
         <p className="mt-2 text-sm text-zinc-500">
           Based on {articleCount} article{articleCount !== 1 ? 's' : ''}
+          {asOfDate && (
+            <span className="block text-xs text-zinc-600">
+              As of {formatCalendarDate(asOfDate)} ET
+            </span>
+          )}
         </p>
       </div>
     </Card>

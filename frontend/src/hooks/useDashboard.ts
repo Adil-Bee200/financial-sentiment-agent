@@ -1,27 +1,38 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  getAlerts,
   getArticles,
   getDailySentiment,
+  getHealth,
   getPipelineStatus,
   getTrackedAssets,
 } from '../api/client'
 import type {
+  Alert,
   Article,
+  HealthStatus,
   PipelineStatus,
   SentimentDaily,
   TrackedAsset,
 } from '../api/types'
-import { latestDailyBySymbol, mergeDailyBySymbol, sortByDateAsc } from '../lib/chart'
+import { historyBySymbol, latestDailyBySymbol } from '../lib/chart'
+
+const SENTIMENT_DAYS = 7
+const MAX_ARTICLES_PER_TICKER = 10
 
 export function useDashboard() {
   const [assets, setAssets] = useState<TrackedAsset[]>([])
   const [dailyBySymbol, setDailyBySymbol] = useState<
     Record<string, SentimentDaily | undefined>
   >({})
+  const [sentimentHistoryBySymbol, setSentimentHistoryBySymbol] = useState<
+    Record<string, SentimentDaily[]>
+  >({})
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
   const [articles, setArticles] = useState<Article[]>([])
-  const [sentimentHistory, setSentimentHistory] = useState<SentimentDaily[]>([])
   const [pipeline, setPipeline] = useState<PipelineStatus | null>(null)
+  const [health, setHealth] = useState<HealthStatus | null>(null)
+  const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -29,15 +40,21 @@ export function useDashboard() {
     setLoading(true)
     setError(null)
     try {
-      const [assetList, dailyAll, pipelineStatus] = await Promise.all([
-        getTrackedAssets(),
-        getDailySentiment(undefined, 30),
-        getPipelineStatus(),
-      ])
+      const [assetList, dailyAll, pipelineStatus, healthStatus, alertList] =
+        await Promise.all([
+          getTrackedAssets(),
+          getDailySentiment(undefined, SENTIMENT_DAYS),
+          getPipelineStatus(),
+          getHealth(),
+          getAlerts(10),
+        ])
 
       setAssets(assetList)
       setDailyBySymbol(latestDailyBySymbol(dailyAll))
+      setSentimentHistoryBySymbol(historyBySymbol(dailyAll))
       setPipeline(pipelineStatus)
+      setHealth(healthStatus)
+      setAlerts(alertList)
 
       setSelectedSymbol((prev) => {
         if (prev && assetList.some((a) => a.symbol === prev)) return prev
@@ -57,26 +74,15 @@ export function useDashboard() {
   useEffect(() => {
     if (!selectedSymbol) {
       setArticles([])
-      setSentimentHistory([])
       return
     }
     let cancelled = false
-    Promise.all([
-      getArticles(selectedSymbol, 15),
-      getDailySentiment(selectedSymbol, 7),
-    ])
-      .then(([articleData, dailyData]) => {
-        if (!cancelled) {
-          setArticles(articleData)
-          setSentimentHistory(sortByDateAsc(dailyData))
-          setDailyBySymbol((prev) => mergeDailyBySymbol(prev, dailyData))
-        }
+    getArticles(selectedSymbol, MAX_ARTICLES_PER_TICKER)
+      .then((data) => {
+        if (!cancelled) setArticles(data)
       })
       .catch(() => {
-        if (!cancelled) {
-          setArticles([])
-          setSentimentHistory([])
-        }
+        if (!cancelled) setArticles([])
       })
     return () => {
       cancelled = true
@@ -84,6 +90,9 @@ export function useDashboard() {
   }, [selectedSymbol])
 
   const selectedAsset = assets.find((a) => a.symbol === selectedSymbol) ?? null
+  const sentimentHistory = selectedSymbol
+    ? (sentimentHistoryBySymbol[selectedSymbol] ?? [])
+    : []
   const selectedDaily =
     (selectedSymbol ? dailyBySymbol[selectedSymbol] : undefined) ??
     sentimentHistory.at(-1)
@@ -98,6 +107,8 @@ export function useDashboard() {
     sentimentHistory,
     articles,
     pipeline,
+    health,
+    alerts,
     loading,
     error,
     reload: load,

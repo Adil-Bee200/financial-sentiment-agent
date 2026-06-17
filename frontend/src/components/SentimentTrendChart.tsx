@@ -47,6 +47,12 @@ function SentimentTrendTooltip({
       {row.momentum != null && (
         <ChartTooltipRow label="Momentum" value={formatScore(row.momentum)} />
       )}
+      {row.std_div != null && (
+        <ChartTooltipRow
+          label="Std dev"
+          value={`±${row.std_div.toFixed(2)}`}
+        />
+      )}
     </ChartTooltipBox>
   )
 }

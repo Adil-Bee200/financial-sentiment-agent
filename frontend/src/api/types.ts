@@ -1,3 +1,8 @@
+export interface HealthStatus {
+  status: string
+  database: string
+}
+
 export interface TrackedAsset {
   ticker_id: string
   symbol: string

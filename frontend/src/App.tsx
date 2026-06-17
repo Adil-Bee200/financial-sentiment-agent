@@ -18,6 +18,8 @@ function App() {
     sentimentHistory,
     articles,
     pipeline,
+    health,
+    alerts,
     loading,
     error,
     reload,
@@ -43,6 +45,7 @@ function App() {
               <SentimentGauge
                 score={selectedDaily?.avg_sentiment ?? null}
                 articleCount={selectedDaily?.article_count ?? 0}
+                asOfDate={selectedDaily?.date}
               />
             </div>
             <div className="w-full">
@@ -61,7 +64,7 @@ function App() {
         </div>
       </main>
 
-      <PipelinePanel status={pipeline} />
+      <PipelinePanel status={pipeline} health={health} alerts={alerts} />
     </div>
   )
 }

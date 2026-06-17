@@ -1,9 +1,12 @@
-import type { PipelineStatus } from '../api/types'
+import type { Alert, HealthStatus, PipelineStatus } from '../api/types'
 import { formatCurrency, formatDateTime } from '../lib/format'
+import { AlertsList } from './AlertsList'
 import { Card, SectionTitle } from './ui'
 
 interface PipelinePanelProps {
   status: PipelineStatus | null
+  health: HealthStatus | null
+  alerts: Alert[]
 }
 
 function StatRow({
@@ -64,12 +67,28 @@ function statusAccent(
   }
 }
 
-export function PipelinePanel({ status }: PipelinePanelProps) {
+function HealthIndicator({ health }: { health: HealthStatus | null }) {
+  const ok = health?.status === 'ok' && health?.database === 'connected'
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <span
+        className={`h-2 w-2 rounded-full ${ok ? 'bg-emerald-400' : 'bg-red-400'}`}
+      />
+      <span className="text-[10px] text-zinc-600">
+        API {ok ? 'connected' : 'unavailable'}
+        {health?.database ? ` · DB ${health.database}` : ''}
+      </span>
+    </div>
+  )
+}
+
+export function PipelinePanel({ status, health, alerts }: PipelinePanelProps) {
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-l border-white/[0.08] bg-[#0d1117]">
       <div className="border-b border-white/[0.08] px-4 py-5">
         <SectionTitle>Pipeline Status</SectionTitle>
         <p className="mt-1 text-xs text-zinc-600">Daily cron · 21:00 UTC</p>
+        <HealthIndicator health={health} />
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
@@ -98,7 +117,7 @@ export function PipelinePanel({ status }: PipelinePanelProps) {
               accent="green"
             />
             <StatRow
-              label="Est. LLM cost"
+              label="LLM cost (obs.)"
               value={formatCurrency(status.estimated_llm_cost)}
             />
             <StatRow
@@ -115,6 +134,8 @@ export function PipelinePanel({ status }: PipelinePanelProps) {
             cron execution.
           </p>
         )}
+
+        <AlertsList alerts={alerts} />
       </div>
     </aside>
   )
