@@ -15,13 +15,13 @@ interface ArticleListProps {
 
 export function ArticleList({ articles, symbol }: ArticleListProps) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div>
       <SectionTitle>
         Top relevant recent articles{symbol ? ` — ${symbol}` : ''}
       </SectionTitle>
 
       {articles.length === 0 ? (
-        <Card className="mt-3 flex flex-1 items-center justify-center p-8">
+        <Card className="mt-3 p-8 text-center">
           <p className="text-sm text-zinc-500">
             {symbol
               ? 'No articles found for this ticker yet.'
@@ -29,7 +29,7 @@ export function ArticleList({ articles, symbol }: ArticleListProps) {
           </p>
         </Card>
       ) : (
-        <ul className="mt-3 space-y-3 overflow-y-auto pr-1">
+        <ul className="mt-3 space-y-3">
           {articles.map((article) => (
             <li key={`${article.article_id}-${article.symbol}`}>
               <ArticleCard article={article} />

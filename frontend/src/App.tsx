@@ -1,6 +1,7 @@
 import { AssetHeader } from './components/AssetHeader'
 import { ArticleList } from './components/ArticleList'
 import { PipelinePanel } from './components/PipelinePanel'
+import { SentimentMetrics } from './components/SentimentMetrics'
 import { SentimentGauge } from './components/SentimentGauge'
 import { Sidebar } from './components/Sidebar'
 import { ErrorState, LoadingState } from './components/StatusStates'
@@ -14,6 +15,7 @@ function App() {
     setSelectedSymbol,
     selectedAsset,
     selectedDaily,
+    sentimentHistory,
     articles,
     pipeline,
     loading,
@@ -33,20 +35,24 @@ function App() {
         onSelect={setSelectedSymbol}
       />
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="border-b border-white/[0.08] px-6 py-5">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-            <AssetHeader asset={selectedAsset} />
-            <div className="w-full max-w-xs shrink-0">
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <div className="shrink-0 border-b border-white/[0.08] px-6 py-8">
+          <div className="mx-auto flex w-full max-w-4xl flex-col items-center text-center">
+            <AssetHeader asset={selectedAsset} centered />
+            <div className="mt-6 w-full">
               <SentimentGauge
                 score={selectedDaily?.avg_sentiment ?? null}
                 articleCount={selectedDaily?.article_count ?? 0}
               />
             </div>
+            <SentimentMetrics
+              history={sentimentHistory}
+              momentum={sentimentHistory.at(-1)?.momentum ?? selectedDaily?.momentum}
+            />
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-5">
+        <div className="px-6 py-5 pb-10">
           <ArticleList articles={articles} symbol={selectedSymbol} />
         </div>
       </main>
