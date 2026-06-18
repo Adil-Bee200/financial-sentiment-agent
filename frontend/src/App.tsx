@@ -57,15 +57,15 @@ function App() {
                   <div className="mt-6 w-full max-w-2xl">
                     <SentimentGauge daily={selectedDaily} />
                   </div>
-                  <div className="w-full">
-                    <SentimentMetrics
-                      history={sentimentHistory}
-                      momentum={
-                        sentimentHistory.at(-1)?.momentum ??
-                        selectedDaily?.momentum
-                      }
-                    />
-                  </div>
+                </div>
+                <div className="mx-auto w-full max-w-6xl">
+                  <SentimentMetrics
+                    history={sentimentHistory}
+                    momentum={
+                      sentimentHistory.at(-1)?.momentum ??
+                      selectedDaily?.momentum
+                    }
+                  />
                 </div>
               </div>
 

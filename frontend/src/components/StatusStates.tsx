@@ -58,7 +58,7 @@ export function ApiConnectingPanel({
         <p className="mt-5 text-base font-medium text-zinc-200">{title}</p>
         <p className="mt-2 text-sm leading-relaxed text-zinc-500">
           The dashboard shell is ready. We&apos;re waiting for the backend to
-          respond, cold starts on the free tier can take around a minute.
+          respond, cold starts can take around a minute.
         </p>
       </div>
     </div>
