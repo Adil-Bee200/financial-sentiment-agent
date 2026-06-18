@@ -11,6 +11,7 @@ interface SidebarProps {
   dailyBySymbol: Record<string, SentimentDaily | undefined>
   selectedSymbol: string | null
   onSelect: (symbol: string) => void
+  loading?: boolean
 }
 
 export function Sidebar({
@@ -18,6 +19,7 @@ export function Sidebar({
   dailyBySymbol,
   selectedSymbol,
   onSelect,
+  loading = false,
 }: SidebarProps) {
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-white/[0.08] bg-[#0d1117]">
@@ -28,6 +30,9 @@ export function Sidebar({
 
       <div className="flex-1 overflow-y-auto p-3">
         <SectionTitle>Tracked Assets</SectionTitle>
+        {loading ? (
+          <p className="mt-3 text-xs text-zinc-600">Waiting for API…</p>
+        ) : (
         <ul className="mt-3 space-y-1">
           {assets.map((asset) => {
             const daily = dailyBySymbol[asset.symbol]
@@ -63,6 +68,7 @@ export function Sidebar({
             )
           })}
         </ul>
+        )}
       </div>
     </aside>
   )

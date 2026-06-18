@@ -35,10 +35,14 @@ export function useDashboard() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [connectingSince, setConnectingSince] = useState<number | null>(null)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
+    setConnectingSince(Date.now())
+    setElapsedSeconds(0)
     try {
       const [assetList, dailyAll, pipelineStatus, healthStatus, alertList] =
         await Promise.all([
@@ -64,8 +68,20 @@ export function useDashboard() {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard')
     } finally {
       setLoading(false)
+      setConnectingSince(null)
     }
   }, [])
+
+  useEffect(() => {
+    if (connectingSince == null) return
+
+    const tick = () => {
+      setElapsedSeconds(Math.floor((Date.now() - connectingSince) / 1000))
+    }
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => window.clearInterval(id)
+  }, [connectingSince])
 
   useEffect(() => {
     load()
@@ -111,6 +127,7 @@ export function useDashboard() {
     alerts,
     loading,
     error,
+    elapsedSeconds,
     reload: load,
   }
 }

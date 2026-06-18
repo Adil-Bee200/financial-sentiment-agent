@@ -7,6 +7,7 @@ interface PipelinePanelProps {
   status: PipelineStatus | null
   health: HealthStatus | null
   alerts: Alert[]
+  loading?: boolean
 }
 
 function StatRow({
@@ -82,7 +83,12 @@ function HealthIndicator({ health }: { health: HealthStatus | null }) {
   )
 }
 
-export function PipelinePanel({ status, health, alerts }: PipelinePanelProps) {
+export function PipelinePanel({
+  status,
+  health,
+  alerts,
+  loading = false,
+}: PipelinePanelProps) {
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-l border-white/[0.08] bg-[#0d1117]">
       <div className="border-b border-white/[0.08] px-4 py-5">
@@ -94,7 +100,9 @@ export function PipelinePanel({ status, health, alerts }: PipelinePanelProps) {
       <div className="flex-1 overflow-y-auto p-4">
         {!status ? (
           <Card className="p-4">
-            <p className="text-sm text-zinc-500">Loading status…</p>
+            <p className="text-sm text-zinc-500">
+              {loading ? 'Waiting for API…' : 'Loading status…'}
+            </p>
           </Card>
         ) : (
           <Card className="divide-y divide-white/[0.06] px-4">

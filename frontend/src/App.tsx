@@ -4,7 +4,11 @@ import { PipelinePanel } from './components/PipelinePanel'
 import { SentimentMetrics } from './components/SentimentMetrics'
 import { SentimentGauge } from './components/SentimentGauge'
 import { Sidebar } from './components/Sidebar'
-import { ErrorState, LoadingState } from './components/StatusStates'
+import {
+  ApiConnectingBanner,
+  ApiConnectingPanel,
+  ErrorBanner,
+} from './components/StatusStates'
 import { useDashboard } from './hooks/useDashboard'
 
 function App() {
@@ -22,45 +26,63 @@ function App() {
     alerts,
     loading,
     error,
+    elapsedSeconds,
     reload,
   } = useDashboard()
 
-  if (loading) return <LoadingState />
-  if (error) return <ErrorState message={error} onRetry={reload} />
+  const hasData = assets.length > 0
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#080b12] text-zinc-100">
-      <Sidebar
-        assets={assets}
-        dailyBySymbol={dailyBySymbol}
-        selectedSymbol={selectedSymbol}
-        onSelect={setSelectedSymbol}
-      />
+    <div className="flex h-screen flex-col overflow-hidden bg-[#080b12] text-zinc-100">
+      {loading && <ApiConnectingBanner elapsedSeconds={elapsedSeconds} />}
+      {error && !loading && <ErrorBanner message={error} onRetry={reload} />}
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-        <div className="shrink-0 border-b border-white/[0.08] px-6 py-8">
-          <div className="mx-auto flex w-full max-w-6xl flex-col items-center text-center">
-            <AssetHeader asset={selectedAsset} centered />
-            <div className="mt-6 w-full max-w-2xl">
-              <SentimentGauge daily={selectedDaily} />
-            </div>
-            <div className="w-full">
-              <SentimentMetrics
-                history={sentimentHistory}
-                momentum={
-                  sentimentHistory.at(-1)?.momentum ?? selectedDaily?.momentum
-                }
-              />
-            </div>
-          </div>
-        </div>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <Sidebar
+          assets={assets}
+          dailyBySymbol={dailyBySymbol}
+          selectedSymbol={selectedSymbol}
+          onSelect={setSelectedSymbol}
+          loading={loading && !hasData}
+        />
 
-        <div className="px-6 py-5 pb-10">
-          <ArticleList articles={articles} symbol={selectedSymbol} />
-        </div>
-      </main>
+        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+          {loading && !hasData ? (
+            <ApiConnectingPanel />
+          ) : (
+            <>
+              <div className="shrink-0 border-b border-white/[0.08] px-6 py-8">
+                <div className="mx-auto flex w-full max-w-6xl flex-col items-center text-center">
+                  <AssetHeader asset={selectedAsset} centered />
+                  <div className="mt-6 w-full max-w-2xl">
+                    <SentimentGauge daily={selectedDaily} />
+                  </div>
+                  <div className="w-full">
+                    <SentimentMetrics
+                      history={sentimentHistory}
+                      momentum={
+                        sentimentHistory.at(-1)?.momentum ??
+                        selectedDaily?.momentum
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
 
-      <PipelinePanel status={pipeline} health={health} alerts={alerts} />
+              <div className="px-6 py-5 pb-10">
+                <ArticleList articles={articles} symbol={selectedSymbol} />
+              </div>
+            </>
+          )}
+        </main>
+
+        <PipelinePanel
+          status={pipeline}
+          health={health}
+          alerts={alerts}
+          loading={loading && !hasData}
+        />
+      </div>
     </div>
   )
 }
