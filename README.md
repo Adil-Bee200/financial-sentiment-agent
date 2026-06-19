@@ -11,7 +11,7 @@ Automated financial news ingestion, LLM sentiment analysis, and a live dashboard
 | | |
 |---|---|
 | **Scale** | 10 tracked equities · daily automated pipeline · 280+ articles ingested per run |
-| **LLM budget** | Hard cap of **80 OpenAI calls/day** (prod) · typical run analyzes **~40** after keyword filter |
+| **LLM budget** | Hard cap of **80 OpenAI calls/day** (prod) · typical run analyzes **~60** after keyword filter |
 | **LLM efficiency** | ~14% of fetched articles reach OpenAI · ~$0.05 per run · ~$1.50/month at daily cadence |
 | **Stack** | Python 3.12 · FastAPI · PostgreSQL (Neon) · OpenAI · GitHub Actions · React 19 · TypeScript |
 | **Quality** | 96 automated tests · 72% backend coverage · CI on every push |
@@ -23,13 +23,13 @@ Automated financial news ingestion, LLM sentiment analysis, and a live dashboard
 |--------|------:|
 | Articles fetched (NewsAPI) | ~286 |
 | Passed keyword filter | ~72 (~25%) |
-| LLM-analyzed & stored | ~39 (~14% of fetched; **under 80/day cap**) |
+| LLM-analyzed & stored | ~60 (~14% of fetched; **under 80/day cap**) |
 | LLM budget (configured max) | 80 articles / day |
 | Run duration | ~4 min |
 | Estimated OpenAI cost | ~$0.05 |
 | Alerts triggered | ~6 |
 
-Most fetched articles never reach OpenAI — keyword confidence scoring (≥ 0.90) and priority ranking gate them first. The **80/day cap** is a cost ceiling; typical runs use roughly half of it.
+Most fetched articles never reach OpenAI, keyword confidence scoring (≥ 0.90) and priority ranking gate them first. The **80/day cap** is a cost ceiling; typical runs don't reach it.
 
 ---
 
@@ -54,19 +54,19 @@ On the read side, a FastAPI backend serves the data and a React dashboard lets y
 
 ## Screenshots
 
-**Dashboard** — sidebar, header, and sentiment gauge for the selected ticker.
+**Dashboard** : sidebar, header, and sentiment gauge for the selected ticker.
 
 ![Dashboard](./docs/screenshots/dashboard.png)
 
-**Charts** — momentum and 7-day sentiment & volume.
+**Charts** : momentum and 7-day sentiment & volume.
 
 ![Charts](./docs/screenshots/charts.png)
 
-**Articles** — recent news feed with LLM summaries and sentiment scores.
+**Articles** : recent news feed with LLM summaries and sentiment scores.
 
 ![Articles](./docs/screenshots/articles.png)
 
-**Pipeline** — latest run status and alerts panel.
+**Pipeline** : latest run status and alerts panel.
 
 ![Pipeline](./docs/screenshots/pipeline.png)
 
