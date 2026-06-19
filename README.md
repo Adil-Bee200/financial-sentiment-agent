@@ -1,9 +1,37 @@
 # Financial Sentiment Agent
+
 Automated financial news ingestion, LLM sentiment analysis, and a live dashboard for tracked equities.
 
+**Live demo:** https://tubular-lolly-084b55.netlify.app
 
-**Live Demo:** https://tubular-lolly-084b55.netlify.app/
+---
 
+## At a glance
+
+| | |
+|---|---|
+| **Scale** | 10 tracked equities · daily automated pipeline · 280+ articles ingested per run |
+| **LLM budget** | Hard cap of **80 OpenAI calls/day** (prod) · typical run analyzes **~40** after keyword filter |
+| **LLM efficiency** | ~14% of fetched articles reach OpenAI · ~$0.05 per run · ~$1.50/month at daily cadence |
+| **Stack** | Python 3.12 · FastAPI · PostgreSQL (Neon) · OpenAI · GitHub Actions · React 19 · TypeScript |
+| **Quality** | 96 automated tests · 72% backend coverage · CI on every push |
+| **Deploy** | Render (API) · Netlify (dashboard) · Neon (database) |
+
+### Typical production run
+
+| Metric | Value |
+|--------|------:|
+| Articles fetched (NewsAPI) | ~286 |
+| Passed keyword filter | ~72 (~25%) |
+| LLM-analyzed & stored | ~39 (~14% of fetched; **under 80/day cap**) |
+| LLM budget (configured max) | 80 articles / day |
+| Run duration | ~4 min |
+| Estimated OpenAI cost | ~$0.05 |
+| Alerts triggered | ~6 |
+
+Most fetched articles never reach OpenAI — keyword confidence scoring (≥ 0.90) and priority ranking gate them first. The **80/day cap** is a cost ceiling; typical runs use roughly half of it.
+
+---
 
 ## Overview
 
@@ -11,18 +39,16 @@ This project watches a portfolio of major US equities, pulls financial news ever
 
 On the read side, a FastAPI backend serves the data and a React dashboard lets you explore sentiment gauges, charts, recent articles, and pipeline status for each ticker.
 
-**What it does, end to end:**
+**Pipeline flow:**
 
-1. Fetches financial news from NewsAPI on a daily schedule
-2. Filters articles to tracked tickers using keyword confidence scoring
-3. Sends high-priority articles to OpenAI for sentiment and summaries
-4. Stores results and rolls up daily sentiment by analysis day (US Eastern)
-5. Fires alerts on rolling sentiment thresholds and volume spikes
-6. Exposes everything through a read-only API and React dashboard
+1. Fetch financial news from NewsAPI (48h window, general + per-ticker queries)
+2. Dedupe by URL and filter to tracked tickers with keyword confidence scoring (≥ 0.90)
+3. Rank by priority and send top articles to OpenAI (`gpt-5-mini`) under a **daily budget of 80 LLM calls** (production)
+4. Store summaries, sentiment scores (−1…+1), and roll up daily sentiment by analysis day (US Eastern)
+5. Evaluate rolling sentiment and volume-spike rules; notify via optional Discord webhooks
+6. Serve everything through a read-only REST API and React dashboard
 
-**Default tracked tickers:** NVDA, AAPL, MSFT, GOOGL, AMZN, META, TSLA, JPM, BAC, GS
-
-**Stack at a glance:** Python pipeline · FastAPI · PostgreSQL (Neon) · GitHub Actions · React · Vite · Tailwind
+**Tracked tickers:** NVDA · AAPL · MSFT · GOOGL · AMZN · META · TSLA · JPM · BAC · GS
 
 ---
 
@@ -214,7 +240,8 @@ Base URL: `https://financial-sentiment-agent.onrender.com`
 | `GET` | `/api/sentiment/daily` | Analysis-day rollups (`?symbol=&days=`) |
 | `GET` | `/api/articles` | Articles for one ticker (`?symbol=` required) |
 | `GET` | `/api/alerts` | Recent alerts |
-| `GET` | `/api/pipeline/status` | Latest `processing_runs` metrics |
+| `GET` | `/api/pipeline/status` | Latest run metrics (duration, tokens, cost) |
+| `GET` | `/api/stats` | Aggregate project metrics (averages, totals, filter rates) |
 
 Interactive docs: [`/docs`](https://financial-sentiment-agent.onrender.com/docs)
 
@@ -286,9 +313,37 @@ Interactive docs: [`/docs`](https://financial-sentiment-agent.onrender.com/docs)
   "started_at": "2026-06-17T22:30:04.728530Z",
   "timezone": "America/New_York",
   "articles_fetched": 286,
+  "articles_keyword_matched": 72,
   "articles_analyzed": 39,
+  "articles_skipped_llm_limit": 33,
+  "run_duration_seconds": 234.0,
   "estimated_llm_cost": 0.05,
+  "llm_prompt_tokens": 142000,
+  "llm_completion_tokens": 28000,
   "alerts_triggered": 6
+}
+```
+
+**`GET /api/stats`**
+
+```json
+{
+  "tracked_tickers": 10,
+  "completed_pipeline_runs": 12,
+  "total_articles_stored": 97,
+  "total_ticker_mentions": 120,
+  "total_alerts": 18,
+  "total_articles_analyzed": 56,
+  "total_estimated_llm_cost_usd": 0.58,
+  "recent_runs_sample_size": 10,
+  "avg_articles_fetched": 286.0,
+  "avg_articles_keyword_matched": 72.0,
+  "avg_articles_analyzed": 39.0,
+  "avg_run_duration_seconds": 234.0,
+  "avg_estimated_llm_cost_usd": 0.05,
+  "llm_selectivity_pct": 54.2,
+  "keyword_filter_pass_rate_pct": 25.2,
+  "estimated_monthly_llm_cost_usd": 1.5
 }
 ```
 
@@ -354,6 +409,12 @@ python -m scripts.run_pipeline
 
 ```bash
 python -m scripts.reaggregate_sentiment --days 7
+```
+
+### Print live stats (for README updates)
+
+```bash
+python -m scripts.print_project_stats
 ```
 
 ---
