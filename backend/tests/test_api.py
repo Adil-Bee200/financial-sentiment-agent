@@ -206,7 +206,12 @@ class TestPipeline:
             started_at=started,
             finished_at=finished,
             articles_fetched=120,
+            articles_keyword_matched=45,
             num_processed=18,
+            articles_skipped_llm_limit=27,
+            llm_prompt_tokens=12000,
+            llm_completion_tokens=2400,
+            estimated_llm_cost_usd=0.048,
             status="completed",
         )
 
@@ -233,6 +238,10 @@ class TestPipeline:
         data = response.json()
         assert data["status"] == "completed"
         assert data["articles_fetched"] == 120
+        assert data["articles_keyword_matched"] == 45
         assert data["articles_analyzed"] == 18
+        assert data["articles_skipped_llm_limit"] == 27
+        assert data["run_duration_seconds"] == 300.0
+        assert data["estimated_llm_cost"] == 0.048
+        assert data["llm_prompt_tokens"] == 12000
         assert data["alerts_triggered"] == 2
-        assert data["estimated_llm_cost"] == 0.05

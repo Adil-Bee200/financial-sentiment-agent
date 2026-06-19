@@ -7,11 +7,9 @@ from app.core.config import settings
 from app.models.alert import Alerts
 from app.models.processing_runs import ProcessingRuns
 from app.schemas.api import PipelineStatusResponse
+from app.services.stats.project_stats_service import ProjectStatsService
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
-
-# Observed typical run cost until token usage is tracked in the DB.
-_OBSERVED_LLM_COST_PER_RUN = 0.05
 
 
 @router.get("/status", response_model=PipelineStatusResponse)
@@ -31,6 +29,8 @@ def get_pipeline_status(request: Request, db: Session = Depends(get_db)):
     if window_end is not None:
         alerts_query = alerts_query.filter(Alerts.created_at <= window_end)
 
+    cost = run.estimated_llm_cost_usd if run.estimated_llm_cost_usd > 0 else 0.0
+
     return PipelineStatusResponse(
         run_id=run.run_id,
         status=run.status,
@@ -38,7 +38,12 @@ def get_pipeline_status(request: Request, db: Session = Depends(get_db)):
         started_at=run.started_at,
         timezone=settings.APP_TIMEZONE,
         articles_fetched=run.articles_fetched,
+        articles_keyword_matched=run.articles_keyword_matched,
         articles_analyzed=run.num_processed,
-        estimated_llm_cost=_OBSERVED_LLM_COST_PER_RUN,
+        articles_skipped_llm_limit=run.articles_skipped_llm_limit,
+        run_duration_seconds=ProjectStatsService.run_duration_seconds(run),
+        estimated_llm_cost=cost,
+        llm_prompt_tokens=run.llm_prompt_tokens,
+        llm_completion_tokens=run.llm_completion_tokens,
         alerts_triggered=alerts_query.count(),
     )

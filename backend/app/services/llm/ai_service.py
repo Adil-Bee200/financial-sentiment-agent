@@ -1,12 +1,13 @@
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
 from openai import OpenAI, OpenAIError
 
 from app.core.config import settings
 from app.schemas.schemas_v1 import RelevanceResult, SentimentResult
+from app.services.llm.cost import estimate_llm_cost_usd
 from app.services.pipeline.llm_content import truncate_at_word
 
 logger = logging.getLogger(__name__)
@@ -35,9 +36,18 @@ _SYSTEM_RELEVANCE = "Financial relevance checker. JSON only."
 
 
 @dataclass(frozen=True)
+class LlmUsage:
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+
+
+@dataclass(frozen=True)
 class ArticleAnalysis:
     summary: str
     sentiment: SentimentResult
+    usage: LlmUsage = field(default_factory=LlmUsage)
 
 
 class LLMService:
@@ -66,10 +76,10 @@ class LLMService:
         system = f"{_SYSTEM_ANALYZE} {_ANALYZE_JSON_SCHEMA.format(max_summary=max_summary_length)}"
 
         try:
-            raw = self._chat_json(system, user, temperature=0.2)
+            raw, usage = self._chat_json(system, user, temperature=0.2)
             summary = self._coerce_summary(raw.get("summary", ""), content, max_summary_length)
             sentiment = self._parse_sentiment(raw)
-            return ArticleAnalysis(summary=summary, sentiment=sentiment)
+            return ArticleAnalysis(summary=summary, sentiment=sentiment, usage=usage)
         except OpenAIError as e:
             logger.error("OpenAI API error in analyze_article: %s", e)
             return self._fallback_analysis(content, max_summary_length)
@@ -108,7 +118,7 @@ class LLMService:
             "Return JSON with sentiment_score (-1..1), sentiment_label, confidence."
         )
         try:
-            raw = self._chat_json(_SYSTEM_SENTIMENT, user, temperature=0.1)
+            raw, _usage = self._chat_json(_SYSTEM_SENTIMENT, user, temperature=0.1)
             return self._parse_sentiment(raw)
         except OpenAIError as e:
             logger.error("OpenAI API error in sentiment classification: %s", e)
@@ -136,7 +146,7 @@ class LLMService:
             "relevant=true only if the article clearly concerns at least one ticker."
         )
         try:
-            raw = self._chat_json(_SYSTEM_RELEVANCE, user, temperature=0.1)
+            raw, _usage = self._chat_json(_SYSTEM_RELEVANCE, user, temperature=0.1)
             companies = [c for c in raw.get("companies", []) if c in tracked_tickers]
             return RelevanceResult(
                 relevant=bool(raw.get("relevant", False)),
@@ -160,22 +170,22 @@ class LLMService:
     def _article_message(title: str, content: str) -> str:
         return f"Title: {title}\n\nExcerpt:\n{content}"
 
-    def _chat_json(self, system: str, user: str, temperature: float) -> dict[str, Any]:
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "response_format": {"type": "json_object"},
-            "timeout": self.timeout,
-        }
-        if not self.model.startswith("gpt-5"):
-            kwargs["temperature"] = temperature
-        response = self.client.chat.completions.create(**kwargs)
-        return json.loads(response.choices[0].message.content)
+    def _chat_json(self, system: str, user: str, temperature: float) -> tuple[dict[str, Any], LlmUsage]:
+        response = self._create_completion(system, user, temperature, json_mode=True)
+        content = response.choices[0].message.content or "{}"
+        return json.loads(content), self._usage_from_response(response)
 
     def _chat_text(self, system: str, user: str, temperature: float) -> str:
+        response = self._create_completion(system, user, temperature, json_mode=False)
+        return (response.choices[0].message.content or "").strip()
+
+    def _create_completion(
+        self,
+        system: str,
+        user: str,
+        temperature: float,
+        json_mode: bool,
+    ):
         kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": [
@@ -184,10 +194,29 @@ class LLMService:
             ],
             "timeout": self.timeout,
         }
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
         if not self.model.startswith("gpt-5"):
             kwargs["temperature"] = temperature
-        response = self.client.chat.completions.create(**kwargs)
-        return (response.choices[0].message.content or "").strip()
+        return self.client.chat.completions.create(**kwargs)
+
+    @staticmethod
+    def _usage_from_response(response) -> LlmUsage:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return LlmUsage()
+        try:
+            prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+            completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+            total_tokens = int(getattr(usage, "total_tokens", 0) or prompt_tokens + completion_tokens)
+        except (TypeError, ValueError):
+            return LlmUsage()
+        return LlmUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            estimated_cost_usd=estimate_llm_cost_usd(prompt_tokens, completion_tokens),
+        )
 
     @staticmethod
     def _coerce_summary(text: str, fallback_source: str, max_length: int) -> str:

@@ -232,6 +232,9 @@ class PipelineService:
         skipped_no_keyword = 0
         skipped_llm_limit = 0
         llm_used_this_run = 0
+        llm_prompt_tokens = 0
+        llm_completion_tokens = 0
+        estimated_llm_cost_usd = 0.0
         symbols_touched: Set[str] = set()
         aggregation_dates: Dict[str, Set[datetime]] = {}
 
@@ -250,6 +253,9 @@ class PipelineService:
             analysis = self.llm.analyze_article(title, llm_content)
             summary = analysis.summary
             sentiment = analysis.sentiment
+            llm_prompt_tokens += analysis.usage.prompt_tokens
+            llm_completion_tokens += analysis.usage.completion_tokens
+            estimated_llm_cost_usd += analysis.usage.estimated_cost_usd
             published_at = self._parse_published_at(raw.get("publishedAt"))
             source_name = self._source_name(raw)
             stored_body = self._article_body_for_storage(raw)
@@ -300,6 +306,12 @@ class PipelineService:
         alerts_created = self.alerts.evaluate_all_tracked(tracked, now)
 
         run.num_processed = processed
+        run.articles_keyword_matched = keyword_matched
+        run.articles_skipped_llm_limit = skipped_llm_limit
+        run.alerts_created = alerts_created
+        run.llm_prompt_tokens = llm_prompt_tokens
+        run.llm_completion_tokens = llm_completion_tokens
+        run.estimated_llm_cost_usd = round(estimated_llm_cost_usd, 4)
         run.status = "completed"
         run.finished_at = app_now()
         run.raw_text = (

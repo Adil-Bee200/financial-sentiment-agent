@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     MAX_LLM_ARTICLES_PER_DAY: int = 40
     # Cap each pipeline run so the daily budget spreads across cron runs (0 = daily cap only).
     MAX_LLM_ARTICLES_PER_RUN: int = 10
+    # USD per 1M tokens, used to estimate run cost from OpenAI usage metadata.
+    LLM_INPUT_COST_PER_1M: float = 0.25
+    LLM_OUTPUT_COST_PER_1M: float = 2.00
 
     # Application
     APP_NAME: str = "Financial Research Agent"

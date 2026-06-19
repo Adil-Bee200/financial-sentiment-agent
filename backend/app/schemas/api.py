@@ -60,6 +60,30 @@ class PipelineStatusResponse(BaseModel):
     started_at: Optional[datetime] = None
     timezone: str = "America/New_York"
     articles_fetched: int = 0
+    articles_keyword_matched: int = 0
     articles_analyzed: int = 0
+    articles_skipped_llm_limit: int = 0
+    run_duration_seconds: Optional[float] = None
     estimated_llm_cost: float = 0.0
+    llm_prompt_tokens: int = 0
+    llm_completion_tokens: int = 0
     alerts_triggered: int = 0
+
+
+class ProjectStatsResponse(BaseModel):
+    tracked_tickers: int
+    completed_pipeline_runs: int
+    total_articles_stored: int
+    total_ticker_mentions: int
+    total_alerts: int
+    total_articles_analyzed: int
+    total_estimated_llm_cost_usd: float
+    recent_runs_sample_size: int
+    avg_articles_fetched: float
+    avg_articles_keyword_matched: float
+    avg_articles_analyzed: float
+    avg_run_duration_seconds: float
+    avg_estimated_llm_cost_usd: float
+    llm_selectivity_pct: float
+    keyword_filter_pass_rate_pct: float
+    estimated_monthly_llm_cost_usd: float
