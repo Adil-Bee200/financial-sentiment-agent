@@ -36,6 +36,7 @@ export interface SentimentDaily {
   avg_sentiment: number
   article_count: number
   momentum: number | null
+  rolling_7d_sentiment: number | null
   std_div: number | null
   last_run_at: string | null
   is_current_analysis_day: boolean

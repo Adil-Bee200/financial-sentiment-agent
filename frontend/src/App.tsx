@@ -65,6 +65,10 @@ function App() {
                       sentimentHistory.at(-1)?.momentum ??
                       selectedDaily?.momentum
                     }
+                    rolling7d={
+                      sentimentHistory.at(-1)?.rolling_7d_sentiment ??
+                      selectedDaily?.rolling_7d_sentiment
+                    }
                   />
                 </div>
               </div>
