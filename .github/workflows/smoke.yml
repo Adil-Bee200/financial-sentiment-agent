@@ -1,0 +1,70 @@
+name: Production smoke test
+
+on:
+  schedule:
+    # Daily independent of unit CI and the news pipeline cron.
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  API_URL: https://financial-sentiment-agent.onrender.com
+
+jobs:
+  smoke:
+    name: Live API
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Smoke test production
+        env:
+          API_URL: ${{ env.API_URL }}
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          import sys
+          import time
+          import urllib.request
+
+          API_URL = os.environ["API_URL"].rstrip("/")
+          MAX_ATTEMPTS = 5
+          RETRY_SECONDS = 15
+
+          def fetch_json(url: str, timeout: int = 90) -> tuple[int, object]:
+              req = urllib.request.Request(url)
+              with urllib.request.urlopen(req, timeout=timeout) as resp:
+                  return resp.status, json.load(resp)
+
+          for attempt in range(1, MAX_ATTEMPTS + 1):
+              try:
+                  status, body = fetch_json(f"{API_URL}/health")
+                  assert status == 200
+                  assert body == {"status": "ok", "database": "connected"}
+                  print("OK /health")
+                  break
+              except Exception as exc:
+                  if attempt == MAX_ATTEMPTS:
+                      print(f"FAIL /health after {MAX_ATTEMPTS} attempts: {exc}")
+                      sys.exit(1)
+                  print(f"/health attempt {attempt} failed ({exc}), retrying in {RETRY_SECONDS}s...")
+                  time.sleep(RETRY_SECONDS)
+
+          status, assets = fetch_json(f"{API_URL}/api/tracked-assets")
+          assert status == 200
+          assert isinstance(assets, list) and len(assets) >= 10
+          symbols = {asset["symbol"] for asset in assets}
+          assert "NVDA" in symbols
+          print(f"OK /api/tracked-assets ({len(assets)} tickers)")
+
+          status, pipeline = fetch_json(f"{API_URL}/api/pipeline/status")
+          assert status == 200
+          assert isinstance(pipeline, dict)
+          print("OK /api/pipeline/status")
+
+          print("All smoke checks passed")
+          PY
