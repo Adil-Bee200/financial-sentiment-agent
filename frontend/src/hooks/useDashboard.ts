@@ -20,6 +20,19 @@ import { historyBySymbol, latestDailyBySymbol } from '../lib/chart'
 const SENTIMENT_DAYS = 7
 const MAX_ARTICLES_PER_TICKER = 10
 
+async function fetchDashboardData() {
+  const [assetList, dailyAll, pipelineStatus, healthStatus, alertList] =
+    await Promise.all([
+      getTrackedAssets(),
+      getDailySentiment(undefined, SENTIMENT_DAYS),
+      getPipelineStatus(),
+      getHealth(),
+      getAlerts(10),
+    ])
+
+  return { assetList, dailyAll, pipelineStatus, healthStatus, alertList }
+}
+
 export function useDashboard() {
   const [assets, setAssets] = useState<TrackedAsset[]>([])
   const [dailyBySymbol, setDailyBySymbol] = useState<
@@ -29,7 +42,9 @@ export function useDashboard() {
     Record<string, SentimentDaily[]>
   >({})
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
-  const [articles, setArticles] = useState<Article[]>([])
+  const [articlesBySymbol, setArticlesBySymbol] = useState<
+    Record<string, Article[]>
+  >({})
   const [pipeline, setPipeline] = useState<PipelineStatus | null>(null)
   const [health, setHealth] = useState<HealthStatus | null>(null)
   const [alerts, setAlerts] = useState<Alert[]>([])
@@ -38,39 +53,37 @@ export function useDashboard() {
   const [connectingSince, setConnectingSince] = useState<number | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
 
-  const load = useCallback(async () => {
+  const applyDashboardData = useCallback(
+    (data: Awaited<ReturnType<typeof fetchDashboardData>>) => {
+      setError(null)
+      setAssets(data.assetList)
+      setDailyBySymbol(latestDailyBySymbol(data.dailyAll))
+      setSentimentHistoryBySymbol(historyBySymbol(data.dailyAll))
+      setPipeline(data.pipelineStatus)
+      setHealth(data.healthStatus)
+      setAlerts(data.alertList)
+      setSelectedSymbol((prev) => {
+        if (prev && data.assetList.some((a) => a.symbol === prev)) return prev
+        return data.assetList[0]?.symbol ?? null
+      })
+    },
+    [],
+  )
+
+  const reload = useCallback(async () => {
     setLoading(true)
-    setError(null)
     setConnectingSince(Date.now())
     setElapsedSeconds(0)
+    setError(null)
     try {
-      const [assetList, dailyAll, pipelineStatus, healthStatus, alertList] =
-        await Promise.all([
-          getTrackedAssets(),
-          getDailySentiment(undefined, SENTIMENT_DAYS),
-          getPipelineStatus(),
-          getHealth(),
-          getAlerts(10),
-        ])
-
-      setAssets(assetList)
-      setDailyBySymbol(latestDailyBySymbol(dailyAll))
-      setSentimentHistoryBySymbol(historyBySymbol(dailyAll))
-      setPipeline(pipelineStatus)
-      setHealth(healthStatus)
-      setAlerts(alertList)
-
-      setSelectedSymbol((prev) => {
-        if (prev && assetList.some((a) => a.symbol === prev)) return prev
-        return assetList[0]?.symbol ?? null
-      })
+      applyDashboardData(await fetchDashboardData())
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard')
     } finally {
       setLoading(false)
       setConnectingSince(null)
     }
-  }, [])
+  }, [applyDashboardData])
 
   useEffect(() => {
     if (connectingSince == null) return
@@ -84,21 +97,40 @@ export function useDashboard() {
   }, [connectingSince])
 
   useEffect(() => {
-    load()
-  }, [load])
+    let cancelled = false
+
+    fetchDashboardData()
+      .then((data) => {
+        if (!cancelled) applyDashboardData(data)
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : 'Failed to load dashboard')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [applyDashboardData])
 
   useEffect(() => {
-    if (!selectedSymbol) {
-      setArticles([])
-      return
-    }
+    if (!selectedSymbol) return
+
     let cancelled = false
     getArticles(selectedSymbol, MAX_ARTICLES_PER_TICKER)
       .then((data) => {
-        if (!cancelled) setArticles(data)
+        if (!cancelled) {
+          setArticlesBySymbol((prev) => ({ ...prev, [selectedSymbol]: data }))
+        }
       })
       .catch(() => {
-        if (!cancelled) setArticles([])
+        if (!cancelled) {
+          setArticlesBySymbol((prev) => ({ ...prev, [selectedSymbol]: [] }))
+        }
       })
     return () => {
       cancelled = true
@@ -112,6 +144,9 @@ export function useDashboard() {
   const selectedDaily =
     (selectedSymbol ? dailyBySymbol[selectedSymbol] : undefined) ??
     sentimentHistory.at(-1)
+  const articles = selectedSymbol
+    ? (articlesBySymbol[selectedSymbol] ?? [])
+    : []
 
   return {
     assets,
@@ -128,6 +163,6 @@ export function useDashboard() {
     loading,
     error,
     elapsedSeconds,
-    reload: load,
+    reload,
   }
 }
