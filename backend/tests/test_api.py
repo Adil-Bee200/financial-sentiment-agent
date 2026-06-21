@@ -150,6 +150,12 @@ class TestSentiment:
         with patch(
             "app.api.routes.sentiment.SentimentService",
             return_value=sentiment_service,
+        ), patch(
+            "app.api.routes.sentiment.SentimentService.article_weighted_rolling_sentiment_from_rows",
+            return_value=0.18,
+        ), patch(
+            "app.api.routes.sentiment.now",
+            return_value=datetime(2026, 6, 17, 12, 0, tzinfo=timezone.utc),
         ):
             response = client.get("/api/sentiment/daily", params={"symbol": "AAPL", "days": 7})
 
@@ -157,6 +163,7 @@ class TestSentiment:
         data = response.json()
         assert data[0]["symbol"] == "AAPL"
         assert data[0]["avg_sentiment"] == 0.25
+        assert data[0]["rolling_7d_sentiment"] == 0.18
         assert data[0]["analysis_date"] == "2026-06-12"
         assert data[0]["timezone"] == "America/New_York"
         assert data[0]["analysis_date_label"]
