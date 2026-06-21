@@ -30,21 +30,8 @@ class AlertService:
     def article_weighted_rolling_sentiment(
         self, symbol: str, start_date: datetime, end_date: datetime
     ) -> Optional[float]:
-        rows = self.sentiment_service.get_sentiment_for_ticker_by_date_range(
-            symbol, start_date, end_date
-        )
-        if not rows:
-            return None
-
-        weighted = 0.0
-        total_articles = 0
-        for row in rows:
-            weighted += row.avg_sentiment * row.article_count
-            total_articles += row.article_count
-
-        if total_articles == 0:
-            return None
-        return weighted / total_articles
+        del start_date  # window is defined by end_date + ROLLING_WINDOW_DAYS
+        return self.sentiment_service.article_weighted_rolling_sentiment(symbol, end_date)
 
     def rolling_sentiment_below_threshold(
         self,

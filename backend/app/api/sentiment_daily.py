@@ -15,6 +15,7 @@ def build_sentiment_daily_response(
     symbol: str,
     row: SentimentDaily,
     last_run_at: Optional[datetime] = None,
+    rolling_7d_sentiment: Optional[float] = None,
 ) -> SentimentDailyResponse:
     analysis_date: date = row.date
     return SentimentDailyResponse(
@@ -26,6 +27,7 @@ def build_sentiment_daily_response(
         avg_sentiment=row.avg_sentiment,
         article_count=row.article_count,
         momentum=row.momentum,
+        rolling_7d_sentiment=rolling_7d_sentiment,
         std_div=row.std_div,
         last_run_at=last_run_at,
         is_current_analysis_day=is_today_local(analysis_date),

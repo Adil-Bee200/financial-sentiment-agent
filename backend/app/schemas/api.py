@@ -40,6 +40,7 @@ class SentimentDailyResponse(BaseModel):
     avg_sentiment: float
     article_count: int
     momentum: Optional[float] = None
+    rolling_7d_sentiment: Optional[float] = None
     std_div: Optional[float] = None
     last_run_at: Optional[datetime] = None
     is_current_analysis_day: bool = False

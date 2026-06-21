@@ -1,10 +1,11 @@
 from datetime import date, datetime, timedelta
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 from uuid import UUID
 
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.timezone_util import app_tz, calendar_day_bounds, start_of_local_day, to_local_date
 from app.models.article import ArticleEntities, Articles
 from app.models.sentiment import SentimentDaily
@@ -233,6 +234,44 @@ class SentimentService:
         if value.tzinfo is None:
             value = value.replace(tzinfo=app_tz())
         return start_of_local_day(value)
+
+    @staticmethod
+    def article_weighted_rolling_sentiment_from_rows(
+        rows: Iterable[SentimentDaily],
+        end_date: date,
+        window_days: int | None = None,
+    ) -> Optional[float]:
+        """
+        Article-weighted mean over ``window_days`` ending on ``end_date``.
+
+        Days with zero articles are excluded so quiet days do not dilute the signal.
+        """
+        window = window_days or settings.ROLLING_WINDOW_DAYS
+        start = end_date - timedelta(days=window - 1)
+        weighted = 0.0
+        total_articles = 0
+        for row in rows:
+            if row.date < start or row.date > end_date:
+                continue
+            if row.article_count <= 0:
+                continue
+            weighted += row.avg_sentiment * row.article_count
+            total_articles += row.article_count
+        if total_articles == 0:
+            return None
+        return round(weighted / total_articles, 4)
+
+    def article_weighted_rolling_sentiment(
+        self,
+        symbol: str,
+        end_date: datetime | date,
+        window_days: int | None = None,
+    ) -> Optional[float]:
+        window = window_days or settings.ROLLING_WINDOW_DAYS
+        end = self._to_date(end_date)
+        start = end - timedelta(days=window - 1)
+        rows = self.get_sentiment_for_ticker_by_date_range(symbol, start, end)
+        return self.article_weighted_rolling_sentiment_from_rows(rows, end, window)
 
     def aggregate_sentiment_for_ticker(self, symbol: str, day: datetime | date) -> SentimentDaily:
         day_date = self._to_date(day)
