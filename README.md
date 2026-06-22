@@ -14,7 +14,7 @@ Automated financial news ingestion, LLM sentiment analysis, and a live dashboard
 | **LLM budget** | Hard cap of **80 OpenAI calls/day** (prod) · typical run analyzes **~60** after keyword filter |
 | **LLM efficiency** | ~14% of fetched articles reach OpenAI · ~$0.05 per run · ~$1.50/month at daily cadence |
 | **Stack** | Python 3.12 · FastAPI · PostgreSQL (Neon) · OpenAI · GitHub Actions · React 19 · TypeScript |
-| **Quality** | 96 automated tests · 72% backend coverage · CI on every push |
+| **Quality** | 107 automated tests (99 backend · 8 frontend) · ~73% backend coverage · full-stack CI on every push · daily production smoke test |
 | **Deploy** | Render (API) · Netlify (dashboard) · Neon (database) |
 
 ### Typical production run
@@ -37,7 +37,7 @@ Most fetched articles never reach OpenAI, keyword confidence scoring (≥ 0.90) 
 
 This project watches a portfolio of major US equities, pulls financial news every day, and scores how positive or negative the coverage is using OpenAI. Results land in PostgreSQL, roll up into daily sentiment trends, and can trigger alerts when sentiment or article volume spikes.
 
-On the read side, a FastAPI backend serves the data and a React dashboard lets you explore sentiment gauges, charts, recent articles, and pipeline status for each ticker.
+On the read side, a FastAPI backend serves the data and a React dashboard lets you explore sentiment gauges, 7-day rolling sentiment, charts, recent articles, and pipeline status for each ticker.
 
 **Pipeline flow:**
 
@@ -117,7 +117,7 @@ flowchart TB
 | **Pipeline** | Python 3.12, SQLAlchemy, Alembic, NewsAPI, OpenAI SDK |
 | **API** | FastAPI, Uvicorn, Pydantic v2, SlowAPI rate limiting |
 | **Database** | PostgreSQL (Neon), UUID hub schema, pooled connections |
-| **Orchestration** | GitHub Actions (CI + daily pipeline cron) |
+| **Orchestration** | GitHub Actions (full-stack CI, daily pipeline cron, production smoke test) |
 | **Frontend** | React 19, TypeScript, Vite 8, Tailwind CSS v4, Recharts |
 | **Deploy** | Render (API), Netlify (UI), GitHub Secrets (pipeline env) |
 
@@ -184,6 +184,7 @@ The frontend **does not recompute calendar buckets** — dates and ET labels com
 
 [![CI](https://github.com/Adil-Bee200/financial-sentiment-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Adil-Bee200/financial-sentiment-agent/actions/workflows/ci.yml)
 [![Pipeline](https://github.com/Adil-Bee200/financial-sentiment-agent/actions/workflows/pipeline.yml/badge.svg)](https://github.com/Adil-Bee200/financial-sentiment-agent/actions/workflows/pipeline.yml)
+[![Smoke test](https://github.com/Adil-Bee200/financial-sentiment-agent/actions/workflows/smoke.yml/badge.svg)](https://github.com/Adil-Bee200/financial-sentiment-agent/actions/workflows/smoke.yml)
 
 | | |
 |---|---|
@@ -198,8 +199,9 @@ flowchart LR
     end
 
     subgraph GHA["GitHub Actions"]
-        CI["ci.yml — pytest"]
+        CI["ci.yml — backend + frontend"]
         PL["pipeline.yml — daily cron"]
+        SM["smoke.yml — live API check"]
     end
 
     subgraph Prod["Production"]
@@ -210,7 +212,7 @@ flowchart LR
 
     GIT --> CI
     GIT --> PL
-    PL --> NEON
+    SM --> RENDER
     PL --> NEON
     RENDER --> NEON
     NETLIFY --> RENDER
@@ -218,7 +220,7 @@ flowchart LR
 
 | Service | Role | Config |
 |---------|------|--------|
-| **GitHub Actions** | Run pipeline, migrations, seeds | `DATABASE_URL`, `OPENAI_API_KEY`, `NEWS_API_KEY`, `DISCORD_WEBHOOK_URL` |
+| **GitHub Actions** | CI (pytest + Vitest), daily pipeline, production smoke test | `DATABASE_URL`, `OPENAI_API_KEY`, `NEWS_API_KEY`, `DISCORD_WEBHOOK_URL` |
 | **Neon** | Primary datastore | Pooled `DATABASE_URL` |
 | **Render** | Read-only API | Root: `backend`, start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
 | **Netlify** | Frontend SPA | Base: `frontend`, publish: `dist`, `VITE_API_URL` → Render URL |
@@ -237,7 +239,7 @@ Base URL: `https://financial-sentiment-agent.onrender.com`
 |--------|------|-------------|
 | `GET` | `/health` | API + DB connectivity |
 | `GET` | `/api/tracked-assets` | Monitored tickers |
-| `GET` | `/api/sentiment/daily` | Analysis-day rollups (`?symbol=&days=`) |
+| `GET` | `/api/sentiment/daily` | Analysis-day rollups with 7-day rolling sentiment (`?symbol=&days=`) |
 | `GET` | `/api/articles` | Articles for one ticker (`?symbol=` required) |
 | `GET` | `/api/alerts` | Recent alerts |
 | `GET` | `/api/pipeline/status` | Latest run metrics (duration, tokens, cost) |
@@ -274,6 +276,7 @@ Interactive docs: [`/docs`](https://financial-sentiment-agent.onrender.com/docs)
     "avg_sentiment": 0.291,
     "article_count": 11,
     "momentum": 0.042,
+    "rolling_7d_sentiment": 0.18,
     "std_div": 0.18,
     "last_run_at": "2026-06-17T22:33:57.340828Z",
     "is_current_analysis_day": true
@@ -393,9 +396,19 @@ Open [http://localhost:5173](http://localhost:5173)
 
 ### Tests
 
+**Backend** (pytest):
+
 ```bash
 cd backend && pytest
 ```
+
+**Frontend** (Vitest):
+
+```bash
+cd frontend && npm test
+```
+
+CI runs both suites in parallel on every push to `backend/`, `frontend/`, or workflow changes. A separate **production smoke test** (`smoke.yml`) hits the live Render API daily (with retries for cold starts) and can be triggered manually from the Actions tab.
 
 ### Run pipeline manually
 
@@ -440,8 +453,9 @@ financial-sentiment-agent/
 │   │   └── hooks/            # useDashboard
 │   └── netlify.toml
 ├── .github/workflows/
-│   ├── ci.yml                # pytest on push
-│   └── pipeline.yml          # daily news pipeline
+│   ├── ci.yml                # backend pytest + frontend lint/test/build
+│   ├── pipeline.yml          # daily news pipeline
+│   └── smoke.yml             # daily production API smoke test
 └── docs/screenshots/         # README images
 ```
 
@@ -450,6 +464,8 @@ financial-sentiment-agent/
 ## Design notes
 
 - **Analysis day (ET):** Daily sentiment is grouped by when articles were *analyzed* (`processed_at`), not when they were published — so the gauge matches each pipeline run’s calendar day.
+- **7-day rolling sentiment:** Article-weighted rolling average over the last 7 analysis days — same formula as alert rules. Exposed on `GET /api/sentiment/daily` and shown in the dashboard next to day-over-day momentum.
+- **Pipeline metrics:** Each run records fetch/filter/analyze counts, LLM tokens, estimated cost, and duration in `processing_runs`. Aggregates are served by `GET /api/pipeline/status` and `GET /api/stats`.
 - **LLM budget:** Per-run and per-day caps with priority scoring limit OpenAI cost.
 - **Cold starts:** The Netlify UI loads immediately and retries while the Render free-tier API wakes up.
 
