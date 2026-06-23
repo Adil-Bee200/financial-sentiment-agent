@@ -251,8 +251,21 @@ class PipelineService:
 
             title, llm_content = build_llm_input(raw)
             analysis = self.llm.analyze_article(title, llm_content)
+            if not analysis.ok:
+                logger.warning(
+                    "LLM failed for %s (%s): %s",
+                    title[:80],
+                    analysis.error_kind,
+                    analysis.error_message,
+                )
+                continue
+
             summary = analysis.summary
             sentiment = analysis.sentiment
+            if summary is None or sentiment is None:
+                logger.warning("LLM returned ok=True without summary/sentiment for %s", title[:80])
+                continue
+
             llm_prompt_tokens += analysis.usage.prompt_tokens
             llm_completion_tokens += analysis.usage.completion_tokens
             estimated_llm_cost_usd += analysis.usage.estimated_cost_usd

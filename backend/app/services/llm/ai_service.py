@@ -45,9 +45,12 @@ class LlmUsage:
 
 @dataclass(frozen=True)
 class ArticleAnalysis:
-    summary: str
-    sentiment: SentimentResult
+    ok: bool
+    summary: Optional[str] = None
+    sentiment: Optional[SentimentResult] = None
     usage: LlmUsage = field(default_factory=LlmUsage)
+    error_kind: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 class LLMService:
@@ -79,13 +82,18 @@ class LLMService:
             raw, usage = self._chat_json(system, user, temperature=0.2)
             summary = self._coerce_summary(raw.get("summary", ""), content, max_summary_length)
             sentiment = self._parse_sentiment(raw)
-            return ArticleAnalysis(summary=summary, sentiment=sentiment, usage=usage)
+            return ArticleAnalysis(
+                ok=True,
+                summary=summary,
+                sentiment=sentiment,
+                usage=usage,
+            )
         except OpenAIError as e:
             logger.error("OpenAI API error in analyze_article: %s", e)
-            return self._fallback_analysis(content, max_summary_length)
+            return self._failed_analysis("openai", str(e))
         except Exception as e:
             logger.error("Error in analyze_article: %s", e)
-            return self._fallback_analysis(content, max_summary_length)
+            return self._failed_analysis("unknown", str(e))
 
     def summarize_article(
         self,
@@ -233,10 +241,12 @@ class LLMService:
             return content
         return content[:max_length].rsplit(" ", 1)[0] + "..."
 
-    def _fallback_analysis(self, content: str, max_summary_length: int) -> ArticleAnalysis:
+    @staticmethod
+    def _failed_analysis(error_kind: str, error_message: str) -> ArticleAnalysis:
         return ArticleAnalysis(
-            summary=self._fallback_summary(content, max_summary_length),
-            sentiment=SentimentResult(sentiment_score=0.0, sentiment_label="neutral", confidence=0.0),
+            ok=False,
+            error_kind=error_kind,
+            error_message=error_message,
         )
 
     @staticmethod
