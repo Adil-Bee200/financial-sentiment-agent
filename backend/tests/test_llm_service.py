@@ -9,10 +9,17 @@ Tests all three main functions:
 import pytest
 import json
 from unittest.mock import Mock, patch
-from openai import OpenAIError
+from openai import AuthenticationError, OpenAIError, RateLimitError
 
 from app.services.llm.ai_service import ArticleAnalysis, LLMService, MAX_CONTENT_LENGTH
 from app.schemas.schemas_v1 import RelevanceResult, SentimentResult
+
+
+def _openai_status_error(error_cls, status_code: int, message: str = "error"):
+    response = Mock()
+    response.status_code = status_code
+    response.headers = {}
+    return error_cls(message, response=response, body=None)
 
 
 class TestRelevanceGate:
@@ -408,9 +415,57 @@ class TestAnalyzeArticle:
         assert result.ok is False
         assert result.summary is None
         assert result.sentiment is None
-        assert result.error_kind == "openai"
+        assert result.error_kind == "unknown"
         assert result.error_message == "API Error"
         assert result.usage.total_tokens == 0
+
+    def test_analyze_article_auth_error_no_retry(self, llm_service, sample_article):
+        llm_service.client.chat.completions.create.side_effect = _openai_status_error(
+            AuthenticationError, 401, "invalid key"
+        )
+
+        with patch("app.services.llm.ai_service.time.sleep") as sleep_mock:
+            result = llm_service.analyze_article(
+                article_title=sample_article["title"],
+                article_content=sample_article["content"],
+            )
+
+        assert result.ok is False
+        assert result.error_kind == "auth"
+        assert llm_service.client.chat.completions.create.call_count == 1
+        sleep_mock.assert_not_called()
+
+    @patch("app.services.llm.ai_service.time.sleep")
+    def test_analyze_article_rate_limit_retries_then_succeeds(
+        self, sleep_mock, llm_service, sample_article
+    ):
+        mock_response = {
+            "summary": "Retry succeeded.",
+            "sentiment_score": 0.1,
+            "sentiment_label": "neutral",
+            "confidence": 0.8,
+        }
+        mock_message = Mock()
+        mock_message.content = json.dumps(mock_response)
+        mock_choice = Mock()
+        mock_choice.message = mock_message
+        mock_response_obj = Mock()
+        mock_response_obj.choices = [mock_choice]
+
+        llm_service.client.chat.completions.create.side_effect = [
+            _openai_status_error(RateLimitError, 429, "rate limited"),
+            mock_response_obj,
+        ]
+
+        result = llm_service.analyze_article(
+            article_title=sample_article["title"],
+            article_content=sample_article["content"],
+        )
+
+        assert result.ok is True
+        assert result.summary == "Retry succeeded."
+        assert llm_service.client.chat.completions.create.call_count == 2
+        sleep_mock.assert_called_once_with(2.0)
 
     def test_analyze_article_parse_error(self, llm_service, sample_article):
         mock_message = Mock()
@@ -427,8 +482,9 @@ class TestAnalyzeArticle:
         )
 
         assert result.ok is False
-        assert result.error_kind == "unknown"
+        assert result.error_kind == "parse"
         assert result.summary is None
+        assert llm_service.client.chat.completions.create.call_count == 2
 
 
 class TestLLMServiceInitialization:
