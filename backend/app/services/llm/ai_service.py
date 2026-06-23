@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
@@ -8,6 +9,14 @@ from openai import OpenAI, OpenAIError
 from app.core.config import settings
 from app.schemas.schemas_v1 import RelevanceResult, SentimentResult
 from app.services.llm.cost import estimate_llm_cost_usd
+from app.services.llm.llm_errors import (
+    LLM_API_MAX_RETRIES,
+    LLM_PARSE_MAX_ATTEMPTS,
+    LlmErrorKind,
+    backoff_seconds,
+    classify_openai_exception,
+    classify_parse_exception,
+)
 from app.services.pipeline.llm_content import truncate_at_word
 
 logger = logging.getLogger(__name__)
@@ -78,22 +87,42 @@ class LLMService:
         user = self._article_message(title, content)
         system = f"{_SYSTEM_ANALYZE} {_ANALYZE_JSON_SCHEMA.format(max_summary=max_summary_length)}"
 
-        try:
-            raw, usage = self._chat_json(system, user, temperature=0.2)
-            summary = self._coerce_summary(raw.get("summary", ""), content, max_summary_length)
-            sentiment = self._parse_sentiment(raw)
-            return ArticleAnalysis(
-                ok=True,
-                summary=summary,
-                sentiment=sentiment,
-                usage=usage,
-            )
-        except OpenAIError as e:
-            logger.error("OpenAI API error in analyze_article: %s", e)
-            return self._failed_analysis("openai", str(e))
-        except Exception as e:
-            logger.error("Error in analyze_article: %s", e)
-            return self._failed_analysis("unknown", str(e))
+        for parse_attempt in range(LLM_PARSE_MAX_ATTEMPTS):
+            try:
+                response = self._create_completion_with_retries(
+                    system, user, temperature=0.2, json_mode=True
+                )
+                raw = json.loads(response.choices[0].message.content or "{}")
+                usage = self._usage_from_response(response)
+                summary = self._coerce_summary(raw.get("summary", ""), content, max_summary_length)
+                sentiment = self._parse_sentiment(raw)
+                return ArticleAnalysis(
+                    ok=True,
+                    summary=summary,
+                    sentiment=sentiment,
+                    usage=usage,
+                )
+            except (json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
+                info = classify_parse_exception(exc)
+                if parse_attempt + 1 < LLM_PARSE_MAX_ATTEMPTS:
+                    logger.warning(
+                        "Parse error in analyze_article (attempt %s/%s): %s",
+                        parse_attempt + 1,
+                        LLM_PARSE_MAX_ATTEMPTS,
+                        exc,
+                    )
+                    continue
+                logger.error("Parse error in analyze_article: %s", exc)
+                return self._failed_analysis(info.kind.value, info.message)
+            except OpenAIError as exc:
+                info = classify_openai_exception(exc)
+                logger.error("OpenAI API error in analyze_article (%s): %s", info.kind, exc)
+                return self._failed_analysis(info.kind.value, info.message)
+            except Exception as exc:
+                logger.error("Error in analyze_article: %s", exc)
+                return self._failed_analysis(LlmErrorKind.UNKNOWN.value, str(exc))
+
+        return self._failed_analysis(LlmErrorKind.UNKNOWN.value, "analyze_article exhausted retries")
 
     def summarize_article(
         self,
@@ -186,6 +215,36 @@ class LLMService:
     def _chat_text(self, system: str, user: str, temperature: float) -> str:
         response = self._create_completion(system, user, temperature, json_mode=False)
         return (response.choices[0].message.content or "").strip()
+
+    def _create_completion_with_retries(
+        self,
+        system: str,
+        user: str,
+        temperature: float,
+        json_mode: bool,
+    ):
+        last_exc: OpenAIError | None = None
+        for attempt in range(LLM_API_MAX_RETRIES + 1):
+            try:
+                return self._create_completion(system, user, temperature, json_mode)
+            except OpenAIError as exc:
+                last_exc = exc
+                info = classify_openai_exception(exc)
+                if not info.retryable or attempt >= LLM_API_MAX_RETRIES:
+                    raise
+                delay = backoff_seconds(attempt)
+                logger.warning(
+                    "OpenAI %s (attempt %s/%s), retrying in %ss: %s",
+                    info.kind,
+                    attempt + 1,
+                    LLM_API_MAX_RETRIES + 1,
+                    delay,
+                    exc,
+                )
+                time.sleep(delay)
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("_create_completion_with_retries ended without result")
 
     def _create_completion(
         self,
