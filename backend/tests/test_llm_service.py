@@ -387,6 +387,9 @@ class TestAnalyzeArticle:
         )
 
         assert isinstance(result, ArticleAnalysis)
+        assert result.ok is True
+        assert result.summary is not None
+        assert result.sentiment is not None
         assert "NVIDIA" in result.summary or "chip" in result.summary
         assert result.sentiment.sentiment_label == "positive"
         assert result.sentiment.sentiment_score == 0.72
@@ -402,10 +405,30 @@ class TestAnalyzeArticle:
             article_content=sample_article["content"],
         )
 
-        assert isinstance(result.summary, str)
-        assert len(result.summary) > 0
-        assert result.sentiment.sentiment_label == "neutral"
-        assert result.sentiment.sentiment_score == 0.0
+        assert result.ok is False
+        assert result.summary is None
+        assert result.sentiment is None
+        assert result.error_kind == "openai"
+        assert result.error_message == "API Error"
+        assert result.usage.total_tokens == 0
+
+    def test_analyze_article_parse_error(self, llm_service, sample_article):
+        mock_message = Mock()
+        mock_message.content = "not json"
+        mock_choice = Mock()
+        mock_choice.message = mock_message
+        mock_response_obj = Mock()
+        mock_response_obj.choices = [mock_choice]
+        llm_service.client.chat.completions.create.return_value = mock_response_obj
+
+        result = llm_service.analyze_article(
+            article_title=sample_article["title"],
+            article_content=sample_article["content"],
+        )
+
+        assert result.ok is False
+        assert result.error_kind == "unknown"
+        assert result.summary is None
 
 
 class TestLLMServiceInitialization:
