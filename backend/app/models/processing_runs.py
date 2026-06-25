@@ -17,6 +17,7 @@ class ProcessingRuns(Base):
     num_processed = Column(Integer, nullable=False, default=0)
     articles_keyword_matched = Column(Integer, nullable=False, default=0)
     articles_skipped_llm_limit = Column(Integer, nullable=False, default=0)
+    articles_llm_failed = Column(Integer, nullable=False, default=0)
     alerts_created = Column(Integer, nullable=False, default=0)
     llm_prompt_tokens = Column(Integer, nullable=False, default=0)
     llm_completion_tokens = Column(Integer, nullable=False, default=0)
