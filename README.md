@@ -242,7 +242,7 @@ Base URL: `https://financial-sentiment-agent.onrender.com`
 | `GET` | `/api/sentiment/daily` | Analysis-day rollups with 7-day rolling sentiment (`?symbol=&days=`) |
 | `GET` | `/api/articles` | Articles for one ticker (`?symbol=` required) |
 | `GET` | `/api/alerts` | Recent alerts |
-| `GET` | `/api/pipeline/status` | Latest run metrics (duration, tokens, cost) |
+| `GET` | `/api/pipeline/status` | Latest run metrics (`completed` / `partial` / `error`, LLM failures, cost) |
 | `GET` | `/api/stats` | Aggregate project metrics (averages, totals, filter rates) |
 
 Interactive docs: [`/docs`](https://financial-sentiment-agent.onrender.com/docs)
@@ -319,6 +319,7 @@ Interactive docs: [`/docs`](https://financial-sentiment-agent.onrender.com/docs)
   "articles_keyword_matched": 72,
   "articles_analyzed": 39,
   "articles_skipped_llm_limit": 33,
+  "articles_llm_failed": 0,
   "run_duration_seconds": 234.0,
   "estimated_llm_cost": 0.05,
   "llm_prompt_tokens": 142000,
@@ -465,7 +466,8 @@ financial-sentiment-agent/
 
 - **Analysis day (ET):** Daily sentiment is grouped by when articles were *analyzed* (`processed_at`), not when they were published — so the gauge matches each pipeline run’s calendar day.
 - **7-day rolling sentiment:** Article-weighted rolling average over the last 7 analysis days — same formula as alert rules. Exposed on `GET /api/sentiment/daily` and shown in the dashboard next to day-over-day momentum.
-- **Pipeline metrics:** Each run records fetch/filter/analyze counts, LLM tokens, estimated cost, and duration in `processing_runs`. Aggregates are served by `GET /api/pipeline/status` and `GET /api/stats`.
+- **Pipeline metrics:** Each run records fetch/filter/analyze counts, LLM failures, tokens, estimated cost, and duration in `processing_runs`. Aggregates are served by `GET /api/pipeline/status` and `GET /api/stats`.
+- **LLM failure handling:** OpenAI errors are classified (auth, rate limit, timeout, server, parse). Transient errors retry with backoff; auth failures abort the run. Failed articles are not stored — run status is `completed`, `partial`, or `error`. Exposed as `articles_llm_failed` on `/api/pipeline/status`.
 - **LLM budget:** Per-run and per-day caps with priority scoring limit OpenAI cost.
 - **Cold starts:** The Netlify UI loads immediately and retries while the Render free-tier API wakes up.
 
