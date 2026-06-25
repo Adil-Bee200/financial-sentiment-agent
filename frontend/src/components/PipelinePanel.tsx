@@ -42,6 +42,8 @@ function formatRunStatus(status: PipelineStatus['status']): string {
   switch (status) {
     case 'completed':
       return 'Completed'
+    case 'partial':
+      return 'Partial'
     case 'running':
       return 'Running'
     case 'error':
@@ -59,6 +61,8 @@ function statusAccent(
   switch (status) {
     case 'completed':
       return 'green'
+    case 'partial':
+      return 'amber'
     case 'running':
       return 'amber'
     case 'error':
@@ -124,6 +128,13 @@ export function PipelinePanel({
               value={status.articles_analyzed.toLocaleString()}
               accent="green"
             />
+            {(status.articles_llm_failed ?? 0) > 0 && (
+              <StatRow
+                label="LLM failures"
+                value={String(status.articles_llm_failed)}
+                accent="amber"
+              />
+            )}
             <StatRow
               label="LLM cost (obs.)"
               value={formatCurrency(status.estimated_llm_cost)}

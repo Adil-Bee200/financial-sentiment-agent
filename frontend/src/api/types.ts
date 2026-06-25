@@ -58,6 +58,7 @@ export interface PipelineStatus {
   timezone: string
   articles_fetched: number
   articles_analyzed: number
+  articles_llm_failed?: number
   estimated_llm_cost: number
   alerts_triggered: number
 }
