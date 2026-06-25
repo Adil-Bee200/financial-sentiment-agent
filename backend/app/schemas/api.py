@@ -64,6 +64,7 @@ class PipelineStatusResponse(BaseModel):
     articles_keyword_matched: int = 0
     articles_analyzed: int = 0
     articles_skipped_llm_limit: int = 0
+    articles_llm_failed: int = 0
     run_duration_seconds: Optional[float] = None
     estimated_llm_cost: float = 0.0
     llm_prompt_tokens: int = 0

@@ -345,6 +345,7 @@ class PipelineService:
         run.num_processed = processed
         run.articles_keyword_matched = keyword_matched
         run.articles_skipped_llm_limit = skipped_llm_limit
+        run.articles_llm_failed = llm_failed
         run.alerts_created = alerts_created
         run.llm_prompt_tokens = llm_prompt_tokens
         run.llm_completion_tokens = llm_completion_tokens

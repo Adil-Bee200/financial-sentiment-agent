@@ -116,6 +116,7 @@ class TestPipelineLlmFailures:
         db.add.assert_not_called()
         assert run.status == "error"
         assert "auth_error=invalid key" in run.raw_text
+        assert run.articles_llm_failed == 1
 
     def test_partial_when_some_articles_fail(self, pipeline_setup):
         service, db, run = pipeline_setup
@@ -144,6 +145,8 @@ class TestPipelineLlmFailures:
         assert result.articles_llm_failed == 1
         assert result.error is None
         assert service._llm.analyze_article.call_count == 2
+        assert run.articles_llm_failed == 1
+        assert run.status == "partial"
 
     def test_error_when_every_llm_call_fails(self, pipeline_setup):
         service, db, run = pipeline_setup

@@ -41,6 +41,7 @@ def get_pipeline_status(request: Request, db: Session = Depends(get_db)):
         articles_keyword_matched=run.articles_keyword_matched,
         articles_analyzed=run.num_processed,
         articles_skipped_llm_limit=run.articles_skipped_llm_limit,
+        articles_llm_failed=run.articles_llm_failed,
         run_duration_seconds=ProjectStatsService.run_duration_seconds(run),
         estimated_llm_cost=cost,
         llm_prompt_tokens=run.llm_prompt_tokens,
