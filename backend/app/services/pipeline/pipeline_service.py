@@ -18,6 +18,7 @@ from app.services.pipeline.llm_content import (
     count_llm_articles_today,
     remaining_llm_budget_for_run,
 )
+from app.services.llm.llm_errors import LlmErrorKind
 from app.services.sentiment.sentiment_service import SentimentService
 from app.services.tracked_assets.tracked_assets_service import TrackedAssetsService
 
@@ -33,6 +34,7 @@ class PipelineResult:
     articles_processed: int = 0
     articles_skipped_no_keyword: int = 0
     articles_skipped_llm_limit: int = 0
+    articles_llm_failed: int = 0
     llm_budget_remaining_start: int = 0
     alerts_created: int = 0
     symbols_aggregated: List[str] = field(default_factory=list)
@@ -231,6 +233,9 @@ class PipelineService:
         processed = 0
         skipped_no_keyword = 0
         skipped_llm_limit = 0
+        llm_failed = 0
+        auth_failure = False
+        llm_error_message: str | None = None
         llm_used_this_run = 0
         llm_prompt_tokens = 0
         llm_completion_tokens = 0
@@ -252,17 +257,23 @@ class PipelineService:
             title, llm_content = build_llm_input(raw)
             analysis = self.llm.analyze_article(title, llm_content)
             if not analysis.ok:
+                llm_failed += 1
                 logger.warning(
                     "LLM failed for %s (%s): %s",
                     title[:80],
                     analysis.error_kind,
                     analysis.error_message,
                 )
+                if analysis.error_kind == LlmErrorKind.AUTH:
+                    auth_failure = True
+                    llm_error_message = analysis.error_message
+                    break
                 continue
 
             summary = analysis.summary
             sentiment = analysis.sentiment
             if summary is None or sentiment is None:
+                llm_failed += 1
                 logger.warning("LLM returned ok=True without summary/sentiment for %s", title[:80])
                 continue
 
@@ -318,6 +329,19 @@ class PipelineService:
 
         alerts_created = self.alerts.evaluate_all_tracked(tracked, now)
 
+        run_status = self._resolve_run_status(
+            auth_failure=auth_failure,
+            processed=processed,
+            llm_failed=llm_failed,
+            keyword_matched=keyword_matched,
+        )
+        run_error = self._run_error_message(
+            run_status=run_status,
+            auth_failure=auth_failure,
+            llm_failed=llm_failed,
+            llm_error_message=llm_error_message,
+        )
+
         run.num_processed = processed
         run.articles_keyword_matched = keyword_matched
         run.articles_skipped_llm_limit = skipped_llm_limit
@@ -325,27 +349,61 @@ class PipelineService:
         run.llm_prompt_tokens = llm_prompt_tokens
         run.llm_completion_tokens = llm_completion_tokens
         run.estimated_llm_cost_usd = round(estimated_llm_cost_usd, 4)
-        run.status = "completed"
+        run.status = run_status
         run.finished_at = app_now()
         run.raw_text = (
             f"keyword_matched={keyword_matched}, no_keyword={skipped_no_keyword}, "
-            f"llm_limit_skipped={skipped_llm_limit}, llm_used_run={llm_used_this_run}, "
-            f"alerts={alerts_created}, symbols={','.join(symbols_aggregated) or 'none'}"
+            f"llm_limit_skipped={skipped_llm_limit}, llm_failed={llm_failed}, "
+            f"llm_used_run={llm_used_this_run}, alerts={alerts_created}, "
+            f"symbols={','.join(symbols_aggregated) or 'none'}"
+            + (f", auth_error={llm_error_message}" if auth_failure else "")
         )
         self.db.commit()
 
         return PipelineResult(
             run_id=str(run.run_id),
-            status="completed",
+            status=run_status,
             articles_fetched=run.articles_fetched,
             articles_keyword_matched=keyword_matched,
             articles_processed=processed,
             articles_skipped_no_keyword=skipped_no_keyword,
             articles_skipped_llm_limit=skipped_llm_limit,
+            articles_llm_failed=llm_failed,
             llm_budget_remaining_start=llm_budget,
             alerts_created=alerts_created,
             symbols_aggregated=symbols_aggregated,
+            error=run_error,
         )
+
+    @staticmethod
+    def _resolve_run_status(
+        *,
+        auth_failure: bool,
+        processed: int,
+        llm_failed: int,
+        keyword_matched: int,
+    ) -> str:
+        if auth_failure:
+            return "error"
+        if processed == 0 and llm_failed > 0 and keyword_matched > 0:
+            return "error"
+        if llm_failed > 0:
+            return "partial"
+        return "completed"
+
+    @staticmethod
+    def _run_error_message(
+        *,
+        run_status: str,
+        auth_failure: bool,
+        llm_failed: int,
+        llm_error_message: str | None,
+    ) -> str | None:
+        if auth_failure:
+            return llm_error_message or "OpenAI authentication failed"
+        if run_status == "error" and llm_failed > 0:
+            return f"All {llm_failed} LLM call(s) failed"
+        return None
 
     def _fetch_new_articles(self, now: datetime, tracked_symbols: List[str] | None = None) -> tuple[List[dict], List[dict]]:
         from_date, to_date = self.ingestion.build_date_range(settings.HOURS_BACK, now)
