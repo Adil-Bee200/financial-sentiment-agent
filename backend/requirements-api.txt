@@ -1,0 +1,13 @@
+# FastAPI read API (Render / local uvicorn)
+# Does not include OpenAI, NewsAPI, or Alembic.
+
+fastapi==0.129.0
+slowapi==0.1.9
+uvicorn[standard]==0.40.0
+SQLAlchemy==2.0.46
+psycopg2-binary==2.9.11
+pydantic==2.12.5
+pydantic-settings==2.13.0
+python-dotenv==1.2.1
+python-dateutil==2.9.0.post0
+tzdata==2025.3
